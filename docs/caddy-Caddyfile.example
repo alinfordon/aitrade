@@ -1,0 +1,29 @@
+# Exemplu Caddy v2 — copiază blocurile în Caddyfile-ul tău (ex. /etc/caddy/Caddyfile)
+# și adaptează domeniile + porturile. Caddy obține automat certificate Let’s Encrypt.
+
+# aitrade în Docker pe host (vezi docker-compose.aitrade.example.yml)
+aitrade.example.com {
+	encode gzip zstd
+	reverse_proxy 127.0.0.1:3002 {
+		transport http {
+			read_timeout 2m
+			dial_timeout 30s
+		}
+	}
+}
+
+# Flowise (exemplu — portul tău poate fi altul)
+# flowise.example.com {
+# 	encode gzip zstd
+# 	reverse_proxy 127.0.0.1:3001
+# }
+
+# Varianta PM2 / next start direct pe 3000 (fără Docker pentru aitrade)
+# aitrade.example.com {
+# 	encode gzip zstd
+# 	reverse_proxy 127.0.0.1:3000 {
+# 		transport http {
+# 			read_timeout 2m
+# 		}
+# 	}
+# }

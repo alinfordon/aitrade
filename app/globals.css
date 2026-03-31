@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
+    --card: 222 40% 9%;
+    --card-foreground: 210 40% 96%;
+    --primary: 160 84% 39%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 217 19% 16%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 19% 18%;
+    --muted-foreground: 215 16% 60%;
+    --accent: 186 100% 42%;
+    --accent-foreground: 222 47% 6%;
+    --border: 217 19% 22%;
+    --input: 217 19% 22%;
+    --ring: 160 84% 39%;
+    --radius: 0.625rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer components {
+  /** Logo navbar: puls discret primary → accent (respectă reduced motion) */
+  @keyframes nav-logo-glow {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 1px hsl(160 84% 39% / 0.28),
+        0 0 26px -10px hsl(160 84% 39% / 0.5),
+        inset 0 1px 0 0 hsl(210 40% 98% / 0.07);
+    }
+    50% {
+      box-shadow:
+        0 0 0 1px hsl(186 100% 42% / 0.22),
+        0 0 34px -8px hsl(186 100% 42% / 0.4),
+        inset 0 1px 0 0 hsl(210 40% 98% / 0.09);
+    }
+  }
+
+  .nav-logo-mark {
+    animation: nav-logo-glow 5s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nav-logo-mark {
+      animation: none;
+      box-shadow:
+        0 0 0 1px hsl(160 84% 39% / 0.28),
+        0 0 20px -10px hsl(160 84% 39% / 0.4),
+        inset 0 1px 0 0 hsl(210 40% 98% / 0.06);
+    }
+  }
+}

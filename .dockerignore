@@ -1,0 +1,11 @@
+.next
+.git
+node_modules
+npm-debug.log*
+.env*
+!.env.example
+README.md
+docs
+.cursor
+*.md
+.DS_Store

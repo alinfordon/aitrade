@@ -1,0 +1,40 @@
+# VPS doar cu aitrade + Caddy (HTTPS). Copiază: cp docker-compose.solo.example.yml docker-compose.yml
+# Apoi: cp docs/Caddyfile.docker-solo.example Caddyfile  și editează domeniul.
+
+services:
+  aitrade:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+    expose:
+      - "3000"
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+    depends_on:
+      - aitrade
+
+networks:
+  internal:
+
+volumes:
+  caddy_data:
+  caddy_config:

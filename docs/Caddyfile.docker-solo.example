@@ -1,0 +1,12 @@
+# Folosit de docker-compose.solo.example.yml — numele hostului `aitrade` e serviciul Docker.
+# Înlocuiește domeniul. După editare: docker compose up -d (Caddy ia certificat Let’s Encrypt).
+
+aitrade.example.com {
+	encode gzip zstd
+	reverse_proxy aitrade:3000 {
+		transport http {
+			read_timeout 2m
+			dial_timeout 30s
+		}
+	}
+}

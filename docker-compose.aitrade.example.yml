@@ -1,0 +1,22 @@
+# Copiază lângă stack-ul tău Flowise sau integrează serviciul `aitrade` în același fișier.
+# Pe host, Nginx face HTTPS și proxează spre 127.0.0.1:3002 (nu expune portul la internet fără proxy).
+
+services:
+  aitrade:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+    ports:
+      - "127.0.0.1:3002:3000"
+    # Dacă Flowise și aitrade folosesc același compose, poți adăuga:
+    # networks:
+    #   - web
+
+# networks:
+#   web:
+#     external: true
