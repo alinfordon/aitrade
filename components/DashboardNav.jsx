@@ -16,6 +16,7 @@ const baseLinks = [
   { href: "/live", label: "Live" },
   { href: "/discover", label: "Piață" },
   { href: "/bots", label: "Bots" },
+  { href: "/ai-pilot", label: "AI Pilot" },
   { href: "/strategies", label: "Strategies" },
   { href: "/trades", label: "Trades" },
   { href: "/leaderboard", label: "Leaderboard" },

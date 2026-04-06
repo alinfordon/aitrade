@@ -36,6 +36,16 @@ function quoteFreeBalance(freeObj, quote) {
   return Number(o[quote] ?? o.USDC ?? 0) || 0;
 }
 
+/** Plafon USDC per ordin când AI Pilot e activ și botul e în lista pilotului. */
+function pilotMaxSpendQuote(user, botId) {
+  const p = user?.aiPilot;
+  if (!p?.enabled || !Array.isArray(p.botIds)) return null;
+  if (!p.botIds.some((id) => String(id) === String(botId))) return null;
+  const cap = Number(p.maxUsdcPerTrade);
+  if (!Number.isFinite(cap) || cap <= 0) return null;
+  return cap;
+}
+
 async function safePrice(pair) {
   let p = await getCachedPrice(pair);
   if (p == null || p <= 0) {
@@ -358,7 +368,9 @@ export async function runSingleBot(botId) {
 
   // Entry when flat
   if (modePaper && !paper.open && entryOk) {
-    const alloc = paper.quoteBalance * posPct;
+    let alloc = paper.quoteBalance * posPct;
+    const capQ = pilotMaxSpendQuote(user, bot._id);
+    if (capQ != null) alloc = Math.min(alloc, capQ);
     if (alloc <= 0) {
       bot.lastRun = new Date();
       await bot.save();
@@ -405,7 +417,9 @@ export async function runSingleBot(botId) {
     const { quote } = parsePair(bot.pair);
     const freeObj = bal.free || bal;
     const quoteFree = quoteFreeBalance(freeObj, quote);
-    const spend = quoteFree * posPct;
+    let spend = quoteFree * posPct;
+    const capQ = pilotMaxSpendQuote(user, bot._id);
+    if (capQ != null) spend = Math.min(spend, capQ);
     const qty = spend / price;
     if (spend < 10) {
       bot.lastRun = new Date();

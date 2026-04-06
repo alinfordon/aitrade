@@ -8,7 +8,7 @@ const StrategySchema = new mongoose.Schema(
     definition: { type: mongoose.Schema.Types.Mixed, required: true },
     source: {
       type: String,
-      enum: ["user", "optimized", "auto", "marketplace"],
+      enum: ["user", "optimized", "auto", "marketplace", "pilot"],
       default: "user",
     },
     parentStrategyId: { type: mongoose.Schema.Types.ObjectId, ref: "Strategy", default: null },

@@ -61,11 +61,23 @@ function serializeBot(bot) {
 }
 
 /**
- * @param {{ userId: string, botId: string, disposition?: "close_market" | "manual" }} args
- * @returns {Promise<{ ok: boolean, error?: string, status?: number, needsDisposition?: boolean, bot?: unknown }>}
+ * @param {{
+ *   userId: string,
+ *   botId: string,
+ *   disposition?: "close_market" | "manual",
+ *   preserveStatusAfterClose?: boolean,
+ *   closeTradeMetaReason?: string,
+ * }} args
+ * @returns {Promise<{ ok: boolean, error?: string, status?: number, needsDisposition?: boolean, bot?: unknown, action?: string }>}
  */
 export async function stopBotWithDisposition(args) {
-  const { userId, botId, disposition } = args;
+  const {
+    userId,
+    botId,
+    disposition,
+    preserveStatusAfterClose = false,
+    closeTradeMetaReason = "bot_stop",
+  } = args;
 
   await connectDB();
   const bot = await Bot.findOne({ _id: botId, userId });
@@ -78,6 +90,10 @@ export async function stopBotWithDisposition(args) {
   }
 
   const open = readOpenPosition(bot);
+
+  if (disposition === "close_market" && !open) {
+    return { ok: true, bot: serializeBot(bot), action: "noop_no_position" };
+  }
 
   if (!open) {
     bot.status = "stopped";
@@ -211,7 +227,7 @@ export async function stopBotWithDisposition(args) {
             pnl,
             status: "filled",
             isPaper: false,
-            meta: { orderId: order.id, reason: "bot_stop" },
+            meta: { orderId: order.id, reason: closeTradeMetaReason },
           });
           await bumpUserStats(user._id, pnl, pnl > 0);
           await replicateTradeForFollowers({
@@ -276,7 +292,7 @@ export async function stopBotWithDisposition(args) {
                 status: "filled",
                 isPaper: false,
                 meta: {
-                  reason: "bot_stop",
+                  reason: closeTradeMetaReason,
                   orderId: legs[0]?.orderId,
                   sellLegs: legs.length > 1 ? legs : undefined,
                 },
@@ -304,7 +320,7 @@ export async function stopBotWithDisposition(args) {
                 isPaper: false,
                 errorMessage:
                   "Închidere la stop: cantitate sub LOT_SIZE min notional (praf) — eliberează restul din Binance.",
-                meta: { reason: "bot_stop" },
+                meta: { reason: closeTradeMetaReason },
               });
             }
           }
@@ -330,10 +346,30 @@ export async function stopBotWithDisposition(args) {
       }
     }
 
-    bot.status = "stopped";
+    if (!preserveStatusAfterClose) {
+      bot.status = "stopped";
+    }
     await bot.save();
-    return { ok: true, bot: serializeBot(bot), action: "closed_market" };
+    return {
+      ok: true,
+      bot: serializeBot(bot),
+      action: preserveStatusAfterClose ? "closed_market_preserved" : "closed_market",
+    };
   }
 
   return { ok: false, error: "Opțiune invalidă.", status: 400 };
+}
+
+/**
+ * Închide poziția la piață fără a opri botul (status active/paused rămâne).
+ * Folosit de modulul AI Pilot.
+ */
+export async function closeBotOpenPositionMarketOnly({ userId, botId }) {
+  return stopBotWithDisposition({
+    userId,
+    botId,
+    disposition: "close_market",
+    preserveStatusAfterClose: true,
+    closeTradeMetaReason: "ai_pilot",
+  });
 }

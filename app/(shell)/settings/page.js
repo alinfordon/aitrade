@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { AiPilotPanel } from "@/components/AiPilotPanel";
 import { BinanceConnectionBadge } from "@/components/BinanceConnectionBadge";
 import { RealSpotBalancesTable } from "@/components/RealSpotBalancesTable";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
@@ -63,6 +64,8 @@ export default function SettingsPage() {
           <RealSpotBalancesTable wallet={wallet} />
         </CardContent>
       </Card>
+
+      <AiPilotPanel />
 
       <Card>
         <CardHeader>
