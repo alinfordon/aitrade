@@ -65,6 +65,7 @@ export const config = {
     "/bots/:path*",
     "/strategies/:path*",
     "/trades/:path*",
+    "/leaderboard",
     "/leaderboard/:path*",
     "/settings/:path*",
   ],

@@ -7,7 +7,11 @@ import {
   placeMarketSellSpotClamped,
   placeOrder,
   getBalance,
+  fetchBinanceSpotMarket,
+  spotMaxSellableBaseFromFree,
 } from "@/lib/binance/service";
+import { withRetries } from "@/lib/binance/client";
+import { isDustOrMinNotionalError } from "@/server/trading/execute-manual";
 import { ohlcvToSeries } from "@/server/candles";
 import { evaluateStrategy } from "@/server/engine/strategy-eval";
 import { decryptSecret } from "@/lib/security/crypto";
@@ -164,81 +168,185 @@ export async function runSingleBot(botId) {
         const digest = `close:${bot._id}:${Math.round(price * 100)}`;
         const ok = await acquireOrderLock(String(bot._id), digest);
         if (!ok) return true;
-        try {
-          const order = bot.futuresEnabled
-            ? await placeOrder({
-                apiKey: ukey,
-                secret: usec,
-                symbol: bot.pair,
+
+        const logFailedClose = async (msg) => {
+          try {
+            await Trade.create({
+              userId: bot.userId,
+              botId: bot._id,
+              pair: bot.pair,
+              side: "sell",
+              quantity: pos.quantity,
+              price,
+              status: "failed",
+              isPaper: false,
+              errorMessage: String(msg || "close failed"),
+            });
+          } catch {
+            /* nu blocăm revenirea la flat */
+          }
+        };
+
+        if (bot.futuresEnabled) {
+          try {
+            const order = await placeOrder({
+              apiKey: ukey,
+              secret: usec,
+              symbol: bot.pair,
+              side: "sell",
+              amount: pos.quantity,
+              futures: true,
+            });
+            const soldQty = Number(order.filled ?? pos.quantity);
+            const gross = soldQty * price;
+            const feeEst = gross * 0.001;
+            const pnl = gross - feeEst - soldQty * pos.entryPrice;
+            await markDailyLossFromPnl(pnl, eqForRisk);
+            try {
+              const tr = await Trade.create({
+                userId: bot.userId,
+                botId: bot._id,
+                pair: bot.pair,
                 side: "sell",
-                amount: pos.quantity,
-                futures: true,
-              })
-            : await placeMarketSellSpotClamped({
-                apiKey: ukey,
-                secret: usec,
-                symbol: bot.pair,
-                amountBase: pos.quantity,
+                quantity: soldQty,
+                price,
+                quoteQty: gross,
+                pnl,
+                status: "filled",
+                isPaper: false,
+                meta: { orderId: order.id },
               });
-          const soldQty = Number(order.filled ?? pos.quantity);
-          const gross = soldQty * price;
-          const feeEst = gross * 0.001;
-          const pnl = gross - feeEst - soldQty * pos.entryPrice;
-          await markDailyLossFromPnl(pnl, eqForRisk);
-          const tr = await Trade.create({
-            userId: bot.userId,
-            botId: bot._id,
-            pair: bot.pair,
-            side: "sell",
-            quantity: soldQty,
-            price,
-            quoteQty: gross,
-            pnl,
-            status: "filled",
-            isPaper: false,
-            meta: { orderId: order.id },
-          });
-          await updateUserStats(user._id, pnl, pnl > 0);
-          await replicateTradeForFollowers({
-            traderId: user._id,
-            traderUser: user,
-            sourceTradeDoc: tr,
-            pair: bot.pair,
-            side: "sell",
-            quantity: soldQty,
-            price,
-            quoteQty: gross,
-          });
-          const remaining = pos.quantity - soldQty;
-          if (remaining > Math.max(pos.quantity * 1e-6, 1e-10)) {
-            pos = {
-              open: true,
-              side: "buy",
-              entryPrice: pos.entryPrice,
-              quantity: remaining,
-              openedAt: pos.openedAt,
-            };
+              await updateUserStats(user._id, pnl, pnl > 0);
+              await replicateTradeForFollowers({
+                traderId: user._id,
+                traderUser: user,
+                sourceTradeDoc: tr,
+                pair: bot.pair,
+                side: "sell",
+                quantity: soldQty,
+                price,
+                quoteQty: gross,
+              });
+            } catch (e) {
+              console.error("[bot-runner] futures close log", e);
+            }
+          } catch (e) {
+            await logFailedClose(e?.message || e);
+          }
+          pos = { open: false, side: "buy", entryPrice: 0, quantity: 0 };
+          bot.positionState = pos;
+          await bot.save();
+          return true;
+        }
+
+        /* Spot: mai multe picioare + praf LOT_SIZE → închidem poziția în app ca să poată urma buy */
+        try {
+          const meta = await fetchBinanceSpotMarket(ukey, usec, bot.pair);
+          if (!meta) {
+            await logFailedClose("Pereche spot indisponibilă.");
+            pos = { open: false, side: "buy", entryPrice: 0, quantity: 0 };
             bot.positionState = pos;
             await bot.save();
             return true;
           }
+          const baseSym = meta.market.base;
+          const legs = [];
+          let soldSum = 0;
+          let weightedCost = 0;
+          let remainingWant = pos.quantity;
+          const maxLegs = 6;
+
+          while (remainingWant > 1e-14 && legs.length < maxLegs) {
+            let orderLeg;
+            try {
+              orderLeg = await placeMarketSellSpotClamped({
+                apiKey: ukey,
+                secret: usec,
+                symbol: bot.pair,
+                amountBase: remainingWant,
+              });
+            } catch (e) {
+              if (isDustOrMinNotionalError(e)) break;
+              throw e;
+            }
+            const f = Number(orderLeg.filled ?? 0);
+            if (!Number.isFinite(f) || f <= 0) break;
+            const pxLeg = Number(orderLeg.average || orderLeg.price || price);
+            legs.push({ orderId: orderLeg.id, filled: f, price: pxLeg });
+            soldSum += f;
+            weightedCost += f * pxLeg;
+            remainingWant = Math.max(0, pos.quantity - soldSum);
+            if (remainingWant <= 1e-12) break;
+          }
+
+          const bal = await withRetries(() => meta.exchange.fetchBalance(), { exchange: meta.exchange });
+          const freeNow = Number(bal.free?.[baseSym] ?? 0) || 0;
+          const sellableLeft = spotMaxSellableBaseFromFree(freeNow, meta.market, price);
+
+          if (soldSum > 0) {
+            const avgSell = weightedCost / soldSum;
+            const gross = weightedCost;
+            const feeEst = gross * 0.001;
+            const pnl = gross - feeEst - soldSum * pos.entryPrice;
+            await markDailyLossFromPnl(pnl, eqForRisk);
+            try {
+              const tr = await Trade.create({
+                userId: bot.userId,
+                botId: bot._id,
+                pair: bot.pair,
+                side: "sell",
+                quantity: soldSum,
+                price: avgSell,
+                quoteQty: gross,
+                pnl,
+                status: "filled",
+                isPaper: false,
+                meta: {
+                  orderId: legs[0]?.orderId,
+                  sellLegs: legs.length > 1 ? legs : undefined,
+                },
+              });
+              await updateUserStats(user._id, pnl, pnl > 0);
+              await replicateTradeForFollowers({
+                traderId: user._id,
+                traderUser: user,
+                sourceTradeDoc: tr,
+                pair: bot.pair,
+                side: "sell",
+                quantity: soldSum,
+                price: avgSell,
+                quoteQty: gross,
+              });
+            } catch (e) {
+              console.error("[bot-runner] spot close log", e);
+            }
+          } else {
+            await logFailedClose(
+              "Vânzare spot eșuată sau cantitatea e praf sub LOT_SIZE/min notional — poziție închisă în app; verifică restul pe Binance."
+            );
+          }
+
+          if (sellableLeft > 1e-12) {
+            pos = {
+              open: true,
+              side: "buy",
+              entryPrice: pos.entryPrice,
+              quantity: freeNow,
+              openedAt: pos.openedAt,
+            };
+          } else {
+            pos = { open: false, side: "buy", entryPrice: 0, quantity: 0 };
+          }
+          bot.positionState = pos;
+          await bot.save();
+          return true;
         } catch (e) {
-          await Trade.create({
-            userId: bot.userId,
-            botId: bot._id,
-            pair: bot.pair,
-            side: "sell",
-            quantity: pos.quantity,
-            price,
-            status: "failed",
-            isPaper: false,
-            errorMessage: String(e?.message || e),
-          });
+          await logFailedClose(e?.message || e);
+          pos = { open: false, side: "buy", entryPrice: 0, quantity: 0 };
+          bot.positionState = pos;
+          await bot.save();
+          return true;
         }
-        pos = { open: false, side: "buy", entryPrice: 0, quantity: 0 };
-        bot.positionState = pos;
-        await bot.save();
-        return true;
       }
     }
     return false;

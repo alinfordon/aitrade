@@ -19,11 +19,36 @@ export async function GET(request) {
     searchParams.get("spotOnly") === "1" || searchParams.get("spotOnly") === "true";
 
   try {
-    const { rows, resolvedSymbol, dataSource } = await fetchOHLCV(requested, timeframe, limit, {
-      returnResolvedSymbol: true,
-      /** Din discover: doar spot USDC; altfel poate cădea pe perpetual USDT-M dacă nu există spot. */
-      allowLinearPerpFallback: !spotOnly,
-    });
+    let rows;
+    let resolvedSymbol;
+    let dataSource;
+    try {
+      ({
+        rows,
+        resolvedSymbol,
+        dataSource,
+      } = await fetchOHLCV(requested, timeframe, limit, {
+        returnResolvedSymbol: true,
+        /** Din discover: preferă spot USDC; dacă perechea nu există pe spot, vom reîncerca cu perp. */
+        allowLinearPerpFallback: !spotOnly,
+      }));
+    } catch (firstErr) {
+      const notFound =
+        firstErr?.code === "MARKET_NOT_FOUND" || httpStatusForOhlcvError(firstErr) === 404;
+      if (spotOnly && notFound) {
+        ({
+          rows,
+          resolvedSymbol,
+          dataSource,
+        } = await fetchOHLCV(requested, timeframe, limit, {
+          returnResolvedSymbol: true,
+          allowLinearPerpFallback: true,
+        }));
+      } else {
+        throw firstErr;
+      }
+    }
+
     const candles = rows.map((r) => ({
       time: Math.floor(r[0] / 1000),
       open: r[1],
@@ -35,6 +60,9 @@ export async function GET(request) {
     const payload = { symbol: resolvedSymbol, timeframe, candles };
     if (dataSource && dataSource !== "spot") {
       payload.dataSource = dataSource;
+    }
+    if (spotOnly && dataSource === "linear_perp") {
+      payload.spotUnavailable = true;
     }
     if (resolvedSymbol !== requested) {
       payload.requestedSymbol = requested;

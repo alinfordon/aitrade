@@ -1000,7 +1000,7 @@ export function LiveTradingPanel() {
                   <CardDescription>
                     {kind === "bot"
                       ? `Strategie „${liveBotContext?.strategyName ?? "—"}”: motorul rulează la cron pe lumânări 1h. Pe grafic: intrare, SL/TP la preț din procentele botului și linii pentru indicatorii din reguli (EMA/SMA/Bollinger unde există). Timeframe-ul graficului poate diferi de 1h.`
-                      : "Istoric REST Binance · lumânări și ultimul preț prin WebSocket. SL/TP: plasează pe grafic sau din câmpuri."}
+                      : "Istoric REST Binance · lumânări și ultimul preț prin WebSocket. SL/TP pe grafic sau din câmpuri. După „Analiză AI — SL / TP”, indicatorii aleși de model (EMA/SMA/Bollinger) apar pe grafic."}
                   </CardDescription>
                 </div>
                 <div className="flex flex-col items-end gap-1">
@@ -1155,6 +1155,11 @@ export function LiveTradingPanel() {
                   showProtectionLines={kind === "manual" || kind === "bot"}
                   protectionReadOnly={kind === "bot"}
                   strategyDefinition={liveStrategyDefinition}
+                  aiOverlaySpecs={
+                    kind === "manual" && Array.isArray(aiResult?.chartOverlaySpecs) && aiResult.chartOverlaySpecs.length
+                      ? aiResult.chartOverlaySpecs
+                      : null
+                  }
                   placementMode={kind === "manual" ? placementMode : null}
                   onPlacementConsumed={() => setPlacementMode(null)}
                   onProtectCommit={kind === "manual" ? commitProtectFromChart : undefined}
@@ -1170,7 +1175,8 @@ export function LiveTradingPanel() {
                   <CardTitle className="text-base">Analiză AI — SL / TP</CardTitle>
                   <CardDescription>
                     Gemini evaluează contextul pieței (OHLC) și poziția ta long spot; propune stop loss și take
-                    profit absolut. Educațional — nu este sfat financiar. Necesită plan Pro sau Elite.
+                    profit absolut și indică 1–4 indicatori (EMA/SMA/Bollinger) afișați pe grafic, aliniați cu
+                    analiza. Educațional — nu este sfat financiar. Necesită plan Pro sau Elite.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
@@ -1233,6 +1239,16 @@ export function LiveTradingPanel() {
                                 <li key={i}>{a}</li>
                               ))}
                             </ul>
+                          ) : null}
+                          {Array.isArray(aiResult.chartOverlaySpecs) && aiResult.chartOverlaySpecs.length > 0 ? (
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+                                Indicatori pe grafic
+                              </p>
+                              <p className="text-muted-foreground">
+                                {aiResult.chartOverlaySpecs.map((s) => s.title).join(" · ")}
+                              </p>
+                            </div>
                           ) : null}
                           <div className="flex flex-wrap gap-3 font-mono text-[11px] text-foreground">
                             <span>

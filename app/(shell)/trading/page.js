@@ -13,6 +13,9 @@ import { useSpotWallet } from "@/components/SpotWalletProvider";
 import { toast } from "sonner";
 import { DEFAULT_SPOT_PAIR, DEFAULT_QUOTE_ASSET } from "@/lib/market-defaults";
 import { PageHeader } from "@/components/shell/PageHeader";
+import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
+import { canUsePreTradeAiAnalysis } from "@/lib/plans";
 
 const TF_OPTIONS = ["15m", "1h", "4h", "1d"];
 
@@ -102,6 +105,31 @@ function TradingPageInner() {
   const [amountBase, setAmountBase] = useState("0.001");
   const [loading, setLoading] = useState(false);
   const [customPair, setCustomPair] = useState(false);
+  const [subscriptionPlan, setSubscriptionPlan] = useState(null);
+  const [preTradeAiLoading, setPreTradeAiLoading] = useState(false);
+  const [preTradeAiError, setPreTradeAiError] = useState(null);
+  const [preTradeAi, setPreTradeAi] = useState(null);
+
+  const canTradingAi = canUsePreTradeAiAnalysis(subscriptionPlan ?? "free");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/auth/me");
+        const j = await r.json();
+        if (r.ok && j.user?.subscriptionPlan != null) {
+          setSubscriptionPlan(String(j.user.subscriptionPlan));
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    setPreTradeAi(null);
+    setPreTradeAiError(null);
+  }, [symbol, timeframe, side]);
 
   const loadStats = useCallback(async () => {
     const q = new URLSearchParams({ source: filterSource, paper: filterPaper });
@@ -178,6 +206,32 @@ function TradingPageInner() {
     }
   }
 
+  async function runPreTradeAi() {
+    setPreTradeAiLoading(true);
+    setPreTradeAiError(null);
+    try {
+      const r = await fetch("/api/trading/ai-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pair: normPair(symbol),
+          side,
+          timeframe,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setPreTradeAiError(typeof j.error === "string" ? j.error : "Eroare analiză AI");
+        return;
+      }
+      setPreTradeAi(j);
+    } catch (e) {
+      setPreTradeAiError(e instanceof Error ? e.message : "Eroare");
+    } finally {
+      setPreTradeAiLoading(false);
+    }
+  }
+
   async function resetPaper() {
     await fetch("/api/user/paper-reset", { method: "POST" });
     toast.success(`Paper ${DEFAULT_QUOTE_ASSET} resetat la 10.000`);
@@ -202,7 +256,7 @@ function TradingPageInner() {
     <div className="space-y-8">
       <PageHeader
         title="Tranzacții manuale & grafic"
-        description="Vezi soldul Spot (real sau paper), alege perechea și plasează ordine market."
+        description="Vezi soldul Spot (real sau paper), alege perechea și plasează ordine market. Plan Pro/Elite: analiză AI înainte de ordin, cu indicatori pe grafic și verdict (intră acum / așteaptă) plus sugestie bot."
       />
 
       <Card>
@@ -276,6 +330,99 @@ function TradingPageInner() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Analiză AI înainte de ordin</CardTitle>
+          <CardDescription>
+            Evaluează contextul OHLC pe același timeframe ca graficul, pentru latura curentă (cumpără / vinde).
+            Indicatorii aleși apar pe candlestick-uri. Educațional — nu este sfat financiar. Disponibil pe Pro și
+            Elite (ca analiza Live SL/TP).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {!canTradingAi ? (
+            <p className="text-xs text-muted-foreground">
+              Activează planul Pro sau Elite din{" "}
+              <Link href="/settings" className="font-medium text-primary underline underline-offset-2">
+                Settings
+              </Link>{" "}
+              pentru analiza pre-tranzacție.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={preTradeAiLoading}
+                  onClick={() => runPreTradeAi()}
+                >
+                  {preTradeAiLoading ? "…" : "Generează analiză AI"}
+                </Button>
+                <span className="text-xs text-muted-foreground self-center">
+                  Pereche: <span className="font-mono text-foreground">{normPair(symbol)}</span> · TF:{" "}
+                  <span className="font-mono text-foreground">{timeframe}</span> ·{" "}
+                  {side === "buy" ? "cumpără" : "vinde"}
+                </span>
+              </div>
+              {preTradeAiError ? (
+                <p className="text-xs text-destructive">{preTradeAiError}</p>
+              ) : null}
+              {preTradeAi ? (
+                <div className="space-y-3 rounded-md border border-border/80 bg-muted/15 p-3 text-xs leading-relaxed">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-semibold uppercase text-muted-foreground">Verdict</span>
+                    {preTradeAi.verdict === "ACUM" ? (
+                      <Badge className="bg-emerald-700 hover:bg-emerald-700">Favorabil acum</Badge>
+                    ) : preTradeAi.verdict === "ASTEAPTA" ? (
+                      <Badge variant="destructive">Așteaptă</Badge>
+                    ) : (
+                      <Badge variant="secondary">Neutru</Badge>
+                    )}
+                  </div>
+                  {preTradeAi.notaExecutive ? (
+                    <p className="font-medium text-foreground">{preTradeAi.notaExecutive}</p>
+                  ) : null}
+                  {preTradeAi.analizaTehnica ? (
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase text-muted-foreground">Analiză tehnică</p>
+                      <p className="whitespace-pre-wrap text-muted-foreground">{preTradeAi.analizaTehnica}</p>
+                    </div>
+                  ) : null}
+                  {Array.isArray(preTradeAi.chartOverlaySpecs) && preTradeAi.chartOverlaySpecs.length > 0 ? (
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase text-muted-foreground">Indicatori pe grafic</p>
+                      <p className="text-muted-foreground">
+                        {preTradeAi.chartOverlaySpecs.map((s) => s.title).join(" · ")}
+                      </p>
+                    </div>
+                  ) : null}
+                  {preTradeAi.sugestieBot ? (
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase text-muted-foreground">Bot / strategie</p>
+                      <p className="whitespace-pre-wrap text-muted-foreground">{preTradeAi.sugestieBot}</p>
+                      <Link
+                        href="/bots"
+                        className="mt-1 inline-block text-xs font-medium text-primary underline underline-offset-2"
+                      >
+                        Deschide Bots
+                      </Link>
+                    </div>
+                  ) : null}
+                  {Array.isArray(preTradeAi.avertismente) && preTradeAi.avertismente.length > 0 ? (
+                    <ul className="list-inside list-disc text-amber-200/90">
+                      {preTradeAi.avertismente.map((a, i) => (
+                        <li key={i}>{a}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row flex-wrap items-end justify-between gap-4">
@@ -338,6 +485,9 @@ function TradingPageInner() {
               symbol={normPair(symbol)}
               timeframe={timeframe}
               spotOnly={chartSpotOnly}
+              aiOverlaySpecs={
+                preTradeAi?.chartOverlaySpecs?.length ? preTradeAi.chartOverlaySpecs : null
+              }
             />
           </CardContent>
         </Card>

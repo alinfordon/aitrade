@@ -90,7 +90,7 @@ export default function DiscoverPage() {
     <div className="space-y-8">
       <PageHeader
         title="Descoperă piața"
-        description="Creșteri puternice prin Binance (USDC), tendințe CoinGecko și analiză contextuală cu Gemini acolo unde ai cheie configurată."
+        description="Creșteri spot Binance (USDC), Binance Alpha (tokenuri noi), tendințe CoinGecko și analiză AI cu Gemini unde e configurată cheia."
       />
 
       <Card className="border-primary/25 bg-gradient-to-br from-card/90 via-primary/[0.07] to-accent/[0.05]">
@@ -361,6 +361,128 @@ export default function DiscoverPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Binance Alpha</CardTitle>
+          <CardDescription className="space-y-1">
+            <span>{disc?.alpha}</span>{" "}
+            <a
+              href="https://www.binance.com/en/alpha"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-primary underline underline-offset-2"
+            >
+              Deschide Binance Alpha
+            </a>
+            {" · "}Top după volum 24h (din lista publică API).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Se încarcă…</p>
+          ) : (
+            <div className="max-h-[520px] overflow-auto rounded-md border border-border">
+              <table className="w-full text-left text-sm">
+                <thead className="sticky top-0 bg-muted/80">
+                  <tr className="text-muted-foreground">
+                    <th className="px-3 py-2">Token</th>
+                    <th className="px-3 py-2">Rețea</th>
+                    <th className="px-3 py-2">Preț</th>
+                    <th className="px-3 py-2">24h</th>
+                    <th className="px-3 py-2">Vol. ~24h</th>
+                    <th className="px-3 py-2">Mc. ~</th>
+                    <th className="px-3 py-2">Notă</th>
+                    <th className="px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.alpha || []).length ? (
+                    data.alpha.map((row) => {
+                      const usdcPair = `${row.symbol}/USDC`;
+                      return (
+                        <tr key={`${row.tokenId || row.symbol}-${row.chainName}`} className="border-t border-border/60">
+                          <td className="px-3 py-1.5">
+                            <div className="flex items-center gap-2">
+                              {row.iconUrl ? (
+                                <Image
+                                  src={row.iconUrl}
+                                  alt=""
+                                  width={28}
+                                  height={28}
+                                  className="h-7 w-7 rounded-full"
+                                  unoptimized
+                                />
+                              ) : (
+                                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-[10px]">
+                                  {row.symbol.slice(0, 2)}
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <div className="font-medium">{row.symbol}</div>
+                                <div className="truncate text-xs text-muted-foreground">{row.name}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-1.5 text-xs text-muted-foreground">{row.chainName || "—"}</td>
+                          <td className="px-3 py-1.5 font-mono">{fmtPrice(row.price)}</td>
+                          <td
+                            className={`px-3 py-1.5 font-mono ${
+                              row.pct24h == null
+                                ? ""
+                                : row.pct24h >= 0
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-red-600 dark:text-red-400"
+                            }`}
+                          >
+                            {row.pct24h == null ? "—" : fmtPct(row.pct24h)}
+                          </td>
+                          <td className="px-3 py-1.5 font-mono text-muted-foreground">
+                            {fmtVol(row.volume24h)}
+                          </td>
+                          <td className="px-3 py-1.5 font-mono text-muted-foreground">
+                            {fmtVol(row.marketCap)}
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <div className="flex flex-wrap gap-1">
+                              {row.hotTag ? (
+                                <Badge variant="outline" className="text-[10px]">
+                                  Hot
+                                </Badge>
+                              ) : null}
+                              {row.listingCex ? (
+                                <Badge variant="secondary" className="text-[10px]">
+                                  CEX
+                                </Badge>
+                              ) : null}
+                              {row.alphaId ? (
+                                <span className="font-mono text-[10px] text-muted-foreground">{row.alphaId}</span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <Button variant="ghost" size="sm" className="h-8 px-2" asChild>
+                              <Link href={`/trading?pair=${encodeURIComponent(usdcPair)}&from=discover`}>
+                                USDC
+                              </Link>
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">
+                        Nu sunt date Alpha (verifică mesajele de eroare de sus, dacă apar).
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <p className="text-xs text-muted-foreground">
         Nu este sfat financiar. Criptomonedele sunt volatile; tendințele CoinGecko reflectă interesul pieței, nu garanții de preț.

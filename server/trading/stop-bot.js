@@ -1,7 +1,13 @@
 import { connectDB } from "@/models/db";
 import { Bot, User, Trade } from "@/models";
-import { getPrice, placeMarketSellSpotClamped, placeOrder } from "@/lib/binance/service";
+import {
+  getPrice,
+  placeMarketSellSpotClamped,
+  placeOrder,
+  fetchBinanceSpotMarket,
+} from "@/lib/binance/service";
 import { decryptSecret } from "@/lib/security/crypto";
+import { isDustOrMinNotionalError } from "@/server/trading/execute-manual";
 import { acquireOrderLock } from "@/lib/redis/cache";
 import { replicateTradeForFollowers } from "@/server/copy-trading";
 
@@ -181,61 +187,129 @@ export async function stopBotWithDisposition(args) {
         return { ok: false, error: "Altă operațiune e în curs pentru acest bot. Încearcă din nou.", status: 429 };
       }
       try {
-        const order = bot.futuresEnabled
-          ? await placeOrder({
-              apiKey: ukey,
-              secret: usec,
-              symbol: pair,
-              side: "sell",
-              amount: open.qty,
-              futures: true,
-            })
-          : await placeMarketSellSpotClamped({
-              apiKey: ukey,
-              secret: usec,
-              symbol: pair,
-              amountBase: open.qty,
-            });
-        const soldQty = Number(order.filled ?? open.qty);
-        const gross = soldQty * price;
-        const feeEst = gross * 0.001;
-        const pnl = gross - feeEst - soldQty * open.avgEntry;
-        const tr = await Trade.create({
-          userId: bot.userId,
-          botId: bot._id,
-          pair,
-          side: "sell",
-          quantity: soldQty,
-          price,
-          quoteQty: gross,
-          pnl,
-          status: "filled",
-          isPaper: false,
-          meta: { orderId: order.id, reason: "bot_stop" },
-        });
-        await bumpUserStats(user._id, pnl, pnl > 0);
-        await replicateTradeForFollowers({
-          traderId: user._id,
-          traderUser: user,
-          sourceTradeDoc: tr,
-          pair,
-          side: "sell",
-          quantity: soldQty,
-          price,
-          quoteQty: gross,
-        });
-        const remainder = open.qty - soldQty;
-        if (remainder > Math.max(open.qty * 1e-6, 1e-10)) {
-          bot.positionState = {
-            open: true,
-            side: "buy",
-            entryPrice: open.avgEntry,
-            quantity: remainder,
-            openedAt: bot.positionState?.openedAt ?? null,
-          };
+        if (bot.futuresEnabled) {
+          const order = await placeOrder({
+            apiKey: ukey,
+            secret: usec,
+            symbol: pair,
+            side: "sell",
+            amount: open.qty,
+            futures: true,
+          });
+          const soldQty = Number(order.filled ?? open.qty);
+          const gross = soldQty * price;
+          const feeEst = gross * 0.001;
+          const pnl = gross - feeEst - soldQty * open.avgEntry;
+          const tr = await Trade.create({
+            userId: bot.userId,
+            botId: bot._id,
+            pair,
+            side: "sell",
+            quantity: soldQty,
+            price,
+            quoteQty: gross,
+            pnl,
+            status: "filled",
+            isPaper: false,
+            meta: { orderId: order.id, reason: "bot_stop" },
+          });
+          await bumpUserStats(user._id, pnl, pnl > 0);
+          await replicateTradeForFollowers({
+            traderId: user._id,
+            traderUser: user,
+            sourceTradeDoc: tr,
+            pair,
+            side: "sell",
+            quantity: soldQty,
+            price,
+            quoteQty: gross,
+          });
         } else {
-          bot.positionState = emptyPositionState();
+          const meta = await fetchBinanceSpotMarket(ukey, usec, pair);
+          if (!meta) {
+            throw new Error("Pereche spot indisponibilă.");
+          }
+          {
+            const legs = [];
+            let soldSum = 0;
+            let weightedCost = 0;
+            let remainingWant = open.qty;
+            const maxLegs = 6;
+
+            while (remainingWant > 1e-14 && legs.length < maxLegs) {
+              let orderLeg;
+              try {
+                orderLeg = await placeMarketSellSpotClamped({
+                  apiKey: ukey,
+                  secret: usec,
+                  symbol: pair,
+                  amountBase: remainingWant,
+                });
+              } catch (err) {
+                if (isDustOrMinNotionalError(err)) break;
+                throw err;
+              }
+              const f = Number(orderLeg.filled ?? 0);
+              if (!Number.isFinite(f) || f <= 0) break;
+              const pxLeg = Number(orderLeg.average || orderLeg.price || price);
+              legs.push({ orderId: orderLeg.id, filled: f, price: pxLeg });
+              soldSum += f;
+              weightedCost += f * pxLeg;
+              remainingWant = Math.max(0, open.qty - soldSum);
+              if (remainingWant <= 1e-12) break;
+            }
+
+            if (soldSum > 0) {
+              const avgSell = weightedCost / soldSum;
+              const gross = weightedCost;
+              const feeEst = gross * 0.001;
+              const pnl = gross - feeEst - soldSum * open.avgEntry;
+              const tr = await Trade.create({
+                userId: bot.userId,
+                botId: bot._id,
+                pair,
+                side: "sell",
+                quantity: soldSum,
+                price: avgSell,
+                quoteQty: gross,
+                pnl,
+                status: "filled",
+                isPaper: false,
+                meta: {
+                  reason: "bot_stop",
+                  orderId: legs[0]?.orderId,
+                  sellLegs: legs.length > 1 ? legs : undefined,
+                },
+              });
+              await bumpUserStats(user._id, pnl, pnl > 0);
+              await replicateTradeForFollowers({
+                traderId: user._id,
+                traderUser: user,
+                sourceTradeDoc: tr,
+                pair,
+                side: "sell",
+                quantity: soldSum,
+                price: avgSell,
+                quoteQty: gross,
+              });
+            } else {
+              await Trade.create({
+                userId: bot.userId,
+                botId: bot._id,
+                pair,
+                side: "sell",
+                quantity: open.qty,
+                price,
+                status: "failed",
+                isPaper: false,
+                errorMessage:
+                  "Închidere la stop: cantitate sub LOT_SIZE min notional (praf) — eliberează restul din Binance.",
+                meta: { reason: "bot_stop" },
+              });
+            }
+          }
         }
+        bot.positionState = emptyPositionState();
       } catch (e) {
         await Trade.create({
           userId: bot.userId,

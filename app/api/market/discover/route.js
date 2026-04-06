@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   fetchBinanceUsdcGainers,
+  fetchBinanceAlphaTokens,
   fetchCoinGeckoTrending,
   enrichTrendingWithBinanceSpotUsdc,
   discoverDisclaimer,
@@ -13,6 +14,7 @@ export async function GET() {
   const out = {
     gainers: [],
     trending: [],
+    alpha: [],
     errors: [],
     disclaimer,
   };
@@ -33,6 +35,12 @@ export async function GET() {
         `Perechi spot trending: ${e instanceof Error ? e.message : String(e)}`
       );
     }
+  } catch (e) {
+    out.errors.push(e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    out.alpha = await fetchBinanceAlphaTokens({ limit: 45 });
   } catch (e) {
     out.errors.push(e instanceof Error ? e.message : String(e));
   }

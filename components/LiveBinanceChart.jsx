@@ -7,6 +7,7 @@ import {
   buildStrategyOverlaySpecs,
   candleRowsToClosesAndTimes,
   lineChunksForSpec,
+  mergeStrategyAndAiOverlaySpecs,
 } from "@/lib/chart-strategy-overlays";
 import {
   binanceCombinedSpotLiveUrl,
@@ -35,6 +36,8 @@ export function LiveBinanceChart({
   protectionReadOnly = false,
   /** Strategie bot: desenează EMA/SMA/Bollinger din reguli (dacă există în definition). */
   strategyDefinition = null,
+  /** Manual + analiză AI: linii EMA/SMA/Bollinger din `chartOverlaySpecs` (server). */
+  aiOverlaySpecs = null,
   placementMode = null,
   onPlacementConsumed,
   onProtectCommit,
@@ -312,7 +315,7 @@ export function LiveBinanceChart({
     };
   }, [symbol, timeframe, spotOnly]);
 
-  /** Linii indicator (EMA/SMA/Bollinger) din definiția strategiei botului. */
+  /** Linii indicator: strategie bot și/sau overlay-uri din analiza AI Live. */
   useEffect(() => {
     const chart = chartRef.current;
     const candleSeries = seriesRef.current;
@@ -329,13 +332,9 @@ export function LiveBinanceChart({
       strategyOverlaySeriesRef.current = [];
     };
 
-    if (!strategyDefinition) {
-      clearOverlays();
-      return;
-    }
-
-    const rules = rulesFromStrategyDefinition(strategyDefinition);
-    const specs = buildStrategyOverlaySpecs(rules);
+    const rules = strategyDefinition ? rulesFromStrategyDefinition(strategyDefinition) : [];
+    const strategySpecs = buildStrategyOverlaySpecs(rules);
+    const specs = mergeStrategyAndAiOverlaySpecs(strategySpecs, aiOverlaySpecs);
     if (!specs.length) {
       clearOverlays();
       return;
@@ -375,7 +374,7 @@ export function LiveBinanceChart({
         }
       }
     }
-  }, [strategyDefinition, candleRevision, symbol, timeframe]);
+  }, [strategyDefinition, aiOverlaySpecs, candleRevision, symbol, timeframe]);
 
   /** WebSocket Binance: kline + ticker */
   useEffect(() => {
@@ -715,7 +714,9 @@ export function LiveBinanceChart({
         <p className="text-[11px] text-muted-foreground">
           {protectionReadOnly
             ? "SL/TP la preț absolut din procentele setate la bot (față de intrare). Sub ele: liniile EMA/SMA/Bollinger din regulile strategiei (dacă sunt folosite). RSI/MACD nu sunt desenate pe graficul de preț."
-            : "Trage liniile roșie (SL) sau verde deschis (TP). REST pentru istoric, socket pentru lumânări și preț ultim."}
+            : Array.isArray(aiOverlaySpecs) && aiOverlaySpecs.length > 0
+              ? "Trage liniile roșie (SL) sau verde deschis (TP). Pe fundal: EMA/SMA/Bollinger din ultima analiză AI (Generează analiză). REST pentru istoric, socket pentru lumânări și ticker."
+              : "Trage liniile roșie (SL) sau verde deschis (TP). După „Generează analiză” în cardul AI, indicatorii aleși de model apar pe grafic. REST pentru istoric, socket pentru lumânări și preț ultim."}
         </p>
       )}
     </div>
