@@ -6,7 +6,7 @@ import Bot from "@/models/Bot";
 import { decryptSecret } from "@/lib/security/crypto";
 import { getPrice, placeMarketSellSpotClamped, placeOrder } from "@/lib/binance/service";
 import { createExchange, withRetries, syncServerTime } from "@/lib/binance/client";
-import { DEFAULT_QUOTE_ASSET, getManualPaperQuoteBalance } from "@/lib/market-defaults";
+import { DEFAULT_QUOTE_ASSET, getManualPaperQuoteBalance, normSpotPair } from "@/lib/market-defaults";
 import { mapBinanceUserMessageAsync } from "@/lib/binance/map-exchange-error";
 
 function parsePair(pair) {
@@ -38,13 +38,16 @@ async function bumpUserStats(userId, pnl, win) {
 
 /** Pentru AI Pilot: leagă tranzacția manuală de botul de pe aceeași pereche (control în UI). */
 async function resolvePilotLinkedBotId(userId, pair, preferredBotId) {
-  const p = String(pair);
+  const pNorm = normSpotPair(pair);
   if (preferredBotId && mongoose.isValidObjectId(String(preferredBotId))) {
-    const byId = await Bot.findOne({ _id: preferredBotId, userId, pair: p }).select("_id").lean();
-    if (byId) return byId._id;
+    const bot = await Bot.findOne({ _id: preferredBotId, userId }).select("_id pair").lean();
+    if (bot && normSpotPair(bot.pair) === pNorm) return bot._id;
   }
-  const byPair = await Bot.findOne({ userId, pair: p }).select("_id").lean();
-  return byPair?._id ?? null;
+  const candidates = await Bot.find({ userId }).select("_id pair").lean();
+  for (const b of candidates) {
+    if (normSpotPair(b.pair) === pNorm) return b._id;
+  }
+  return null;
 }
 
 export function isDustOrMinNotionalError(e) {
@@ -79,6 +82,8 @@ export async function executeManualTrade({
   if (!user) {
     return { ok: false, error: "User not found" };
   }
+
+  pair = normSpotPair(pair);
 
   let linkedBotId = null;
   if (associateBotForControl) {

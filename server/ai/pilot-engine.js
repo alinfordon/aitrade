@@ -90,6 +90,14 @@ function normalizeManualAction(a) {
   return null;
 }
 
+function findPilotBotIdOnPair(pilotBots, pairKey) {
+  const p = normPair(pairKey);
+  for (const b of pilotBots) {
+    if (normPair(b.pair) === p) return String(b._id);
+  }
+  return null;
+}
+
 /**
  * @param {string} userId
  */
@@ -248,6 +256,8 @@ export async function runAiPilotForUser(userId) {
       applied.push({ tip: "manual_vinde", pair, ok: false, detail: "fara_pozitie" });
       continue;
     }
+    const pilotBotIdForSell = findPilotBotIdOnPair(bots, pair);
+
     const r = await executeManualTrade({
       userId,
       pair,
@@ -256,6 +266,7 @@ export async function runAiPilotForUser(userId) {
       amountBase: qty,
       fullExit: true,
       associateBotForControl: true,
+      ...(pilotBotIdForSell ? { pilotBotId: pilotBotIdForSell } : {}),
     });
     actionsUsed++;
     applied.push({
@@ -403,7 +414,9 @@ export async function runAiPilotForUser(userId) {
     }
 
     const pilotBotIdForBuy =
-      pilotCreatedBotId && pilotCreatedPair && pair === pilotCreatedPair ? pilotCreatedBotId : null;
+      pilotCreatedBotId && pilotCreatedPair && normPair(pair) === normPair(pilotCreatedPair)
+        ? pilotCreatedBotId
+        : findPilotBotIdOnPair(bots, pair);
 
     const r = await executeManualTrade({
       userId,

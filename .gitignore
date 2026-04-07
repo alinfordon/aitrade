@@ -36,3 +36,9 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+# scripts
+deploy.sh
+deploy_next_https.sh
+setup-nextjs-subdomain.sh
+vps-crontab.md
+vps-cron.sh

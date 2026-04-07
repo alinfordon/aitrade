@@ -4,6 +4,7 @@ import { connectDB } from "@/models/db";
 import Trade from "@/models/Trade";
 import Bot from "@/models/Bot";
 import { requireAuth } from "@/lib/api-helpers";
+import { normSpotPair } from "@/lib/market-defaults";
 
 export async function GET(request) {
   const { session, error } = await requireAuth();
@@ -11,6 +12,8 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const limit = Math.min(Number(searchParams.get("limit") || 50), 200);
   const botIdRaw = searchParams.get("botId");
+  const pairRaw = searchParams.get("pair");
+  const tradeSourceRaw = searchParams.get("tradeSource");
   const aiPilotControl =
     searchParams.get("aiPilotControl") === "1" || searchParams.get("aiPilot") === "1";
 
@@ -18,6 +21,12 @@ export async function GET(request) {
   const filter = { userId: session.userId };
   if (aiPilotControl) {
     filter["meta.aiPilotControl"] = true;
+  }
+  if (pairRaw && String(pairRaw).trim()) {
+    filter.pair = normSpotPair(pairRaw);
+  }
+  if (tradeSourceRaw === "manual" || tradeSourceRaw === "bot" || tradeSourceRaw === "copy") {
+    filter.tradeSource = tradeSourceRaw;
   }
   if (botIdRaw) {
     if (!mongoose.Types.ObjectId.isValid(botIdRaw)) {

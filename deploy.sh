@@ -1,5 +1,5 @@
 #!/bin/bash
-# deploy.sh — script automat pentru VPS
+# deploy.sh ï¿½ script automat pentru VPS
 
 # Configurari
 APP_DIR="/var/www/aitrade"
@@ -7,7 +7,7 @@ BRANCH="main"
 APP_NAME="next-app"
 PORT=3010
 
-# 1?? Navigheaza în directorul aplica?iei
+# 1?? Navigheaza ï¿½n directorul aplica?iei
 cd $APP_DIR || exit
 echo "?? Fixing permissions..."
 sudo chown -R $USER:$USER $APP_DIR
@@ -22,6 +22,7 @@ git fetch --all
 git reset --hard origin/$BRANCH
 
 # 4?? Instaleaza dependen?ele
+rm -rf .next
 npm install
 
 # 5?? Build Next.js

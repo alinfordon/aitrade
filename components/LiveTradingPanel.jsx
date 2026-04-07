@@ -167,6 +167,7 @@ export function LiveTradingPanel() {
   const [aiError, setAiError] = useState(null);
   const [aiResult, setAiResult] = useState(null);
   const [botTrades, setBotTrades] = useState([]);
+  const [manualPairTrades, setManualPairTrades] = useState([]);
 
   const canLiveAi = canUseLiveAiAnalysis(subscriptionPlan ?? "free");
   useEffect(() => {
@@ -301,6 +302,33 @@ export function LiveTradingPanel() {
       clearInterval(id);
     };
   }, [kind, selected?.botId]);
+
+  useEffect(() => {
+    if (kind !== "manual" || !selected?.pair) {
+      setManualPairTrades([]);
+      return;
+    }
+    const pairQ = encodeURIComponent(normPair(selected.pair));
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await fetch(
+          `/api/trades?pair=${pairQ}&tradeSource=manual&limit=40`
+        );
+        const j = await r.json();
+        if (!r.ok || cancelled) return;
+        setManualPairTrades(Array.isArray(j.trades) ? j.trades : []);
+      } catch {
+        if (!cancelled) setManualPairTrades([]);
+      }
+    };
+    load();
+    const id = setInterval(load, 14_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [kind, selected?.pair]);
 
   useEffect(() => {
     if (!selected) setKind(null);
@@ -1336,6 +1364,88 @@ export function LiveTradingPanel() {
               </CardContent>
             </Card>
 
+            {kind === "manual" && selected?.pair ? (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Tranzacții manuale (pereche)</CardTitle>
+                  <CardDescription className="text-xs">
+                    Pilot AI și ordine manuale pe {normPair(selected.pair)}; legate de bot dacă există bot pe
+                    aceeași pereche (reîmprospătare ~14s)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {manualPairTrades.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Nici o înregistrare manuală pentru această pereche sau se încarcă.
+                    </p>
+                  ) : (
+                    <ul className="max-h-64 space-y-2 overflow-y-auto pr-1 text-[11px]">
+                      {manualPairTrades.map((t) => {
+                        const pnlStr = fmtPnl(t.pnl);
+                        const stLabel = TRADE_STATUS_RO[t.status] || t.status;
+                        const pilotTag =
+                          t.meta && typeof t.meta === "object" && t.meta.aiPilotControl;
+                        return (
+                          <li
+                            key={t._id}
+                            className="rounded-md border border-white/10 bg-black/15 px-2 py-1.5 font-mono leading-snug"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-1">
+                              <span className="text-muted-foreground">{fmtLastRun(t.createdAt)}</span>
+                              <span className="flex flex-wrap gap-1">
+                                {pilotTag ? (
+                                  <Badge variant="outline" className="border-amber-500/40 text-[10px] text-amber-200">
+                                    Pilot
+                                  </Badge>
+                                ) : null}
+                                <Badge
+                                  variant="outline"
+                                  className={
+                                    t.side === "buy"
+                                      ? "border-emerald-500/35 text-[10px] text-emerald-200/95"
+                                      : "border-rose-500/35 text-[10px] text-rose-200/95"
+                                  }
+                                >
+                                  {t.side === "buy" ? "Cumpărare" : "Vânzare"}
+                                </Badge>
+                                <Badge variant="secondary" className="text-[10px] font-normal">
+                                  {t.isPaper ? "Paper" : "Real"}
+                                </Badge>
+                                <Badge variant="outline" className="text-[10px] font-normal capitalize">
+                                  {stLabel}
+                                </Badge>
+                              </span>
+                            </div>
+                            <div className="mt-1 text-foreground/95">
+                              {fmtQty(t.quantity)} @ {fmtPrice(t.price)}
+                              {t.botId ? (
+                                <span className="ml-1 text-[10px] text-muted-foreground">
+                                  · bot {String(t.botId).slice(-6)}
+                                </span>
+                              ) : null}
+                              {pnlStr ? (
+                                <span
+                                  className={
+                                    Number(t.pnl) >= 0 ? " text-emerald-600" : " text-red-600"
+                                  }
+                                >
+                                  {" "}
+                                  · PnL {pnlStr}
+                                </span>
+                              ) : null}
+                            </div>
+                            {t.errorMessage ? (
+                              <p className="mt-1 text-[10px] text-red-400/95">{t.errorMessage}</p>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+            ) : null}
+
             {kind === "bot" && selected?.botId ? (
               <Card>
                 <CardHeader className="pb-2">
@@ -1354,6 +1464,8 @@ export function LiveTradingPanel() {
                       {botTrades.map((t) => {
                         const pnlStr = fmtPnl(t.pnl);
                         const stLabel = TRADE_STATUS_RO[t.status] || t.status;
+                        const pilotTag =
+                          t.meta && typeof t.meta === "object" && t.meta.aiPilotControl;
                         return (
                           <li
                             key={t._id}
@@ -1362,6 +1474,11 @@ export function LiveTradingPanel() {
                             <div className="flex flex-wrap items-center justify-between gap-1">
                               <span className="text-muted-foreground">{fmtLastRun(t.createdAt)}</span>
                               <span className="flex flex-wrap gap-1">
+                                {pilotTag ? (
+                                  <Badge variant="outline" className="border-amber-500/40 text-[10px] text-amber-200">
+                                    Pilot
+                                  </Badge>
+                                ) : null}
                                 <Badge
                                   variant="outline"
                                   className={

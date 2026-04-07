@@ -29,6 +29,8 @@ Exemple (înlocuiește `3010`, domeniul nu contează — folosești doar loopbac
 
 **Nu pune secretul în URL** (`?key=...`). Folosește doar header `Authorization: Bearer …`.
 
+**De ce nu văd `run-bots` în „Ultimele execuții cron” din admin?** Jurnalul Mongo se scrie doar după autentificare reușită. Dacă în crontab ai `-H "Authorization: cheia_ta"` **fără** cuvântul `Bearer`, în versiunile vechi primeai **401** și syslog arăta tot `CMD (curl … run-bots)` (cronul rula), dar aplicația respingea cererea. Recomandat: `Authorization: Bearer …`. Din cod acceptăm și valoarea brută identică cu `CRON_SECRET` în `Authorization` (compatibilitate cu crontab-uri existente).
+
 ## Varianta cu script (secret din `.env.production`)
 
 ```bash
