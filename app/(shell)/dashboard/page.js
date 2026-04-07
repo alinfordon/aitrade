@@ -68,20 +68,20 @@ const QUICK_LINKS = [
 export default function DashboardPage() {
   const [user, setUser] = useState(null);
   const [bots, setBots] = useState([]);
-  const [trades, setTrades] = useState([]);
+  const [liveStats, setLiveStats] = useState(null);
   const { wallet, loadWallet } = useSpotWallet();
 
   useEffect(() => {
     (async () => {
       try {
-        const [me, botsRes, tr] = await Promise.all([
+        const [me, botsRes, live] = await Promise.all([
           fetch("/api/auth/me").then((r) => r.json()),
           fetch("/api/bots").then((r) => r.json()),
-          fetch("/api/trades?limit=100").then((r) => r.json()),
+          fetch("/api/dashboard/live-stats").then((r) => r.json()),
         ]);
         if (me.user) setUser(me.user);
         if (botsRes.bots) setBots(botsRes.bots);
-        if (tr.trades) setTrades(tr.trades);
+        if (live.live) setLiveStats(live.live);
       } catch {
         toast.error("Nu s-a putut încărca dashboard-ul");
       }
@@ -90,16 +90,11 @@ export default function DashboardPage() {
 
   const activeBots = bots.filter((b) => b.status === "active").length;
   const maxB = user ? maxBotsForPlan(user.subscriptionPlan) : 1;
-  const winRate =
-    trades.filter((t) => t.pnl != null && t.pnl > 0).length /
-    Math.max(1, trades.filter((t) => t.pnl != null).length);
 
-  const today = new Date().toISOString().slice(0, 10);
-  const todayProfit = trades
-    .filter((t) => (t.createdAt || "").startsWith(today))
-    .reduce((s, t) => s + (Number(t.pnl) || 0), 0);
-
-  const totalProfit = user?.stats?.totalProfit;
+  const winRate = liveStats?.winRate ?? 0;
+  const todayProfit = liveStats?.todayPnl ?? 0;
+  const todayLabel = liveStats?.todayUtc || new Date().toISOString().slice(0, 10);
+  const totalProfit = liveStats?.totalProfit;
   const plan = user?.subscriptionPlan || "free";
 
   async function checkout(p) {
@@ -182,20 +177,20 @@ export default function DashboardPage() {
       <section className="relative mt-10 grid gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
           icon={TrendingUp}
-          label="Profit total (modelat)"
+          label="Profit total live"
           accentClass="bg-emerald-500/25"
-          hint="Agregat din stats cont"
+          hint="Însumat din tranzacții reale (nu paper)"
         >
           <span className={totalProfit != null && totalProfit >= 0 ? "text-emerald-400" : "text-rose-400"}>
-            {totalProfit != null ? totalProfit.toFixed(4) : "—"}
+            {liveStats != null ? Number(totalProfit).toFixed(4) : "—"}
           </span>
           <span className="text-lg font-normal text-muted-foreground sm:text-xl"> USDC</span>
         </StatTile>
         <StatTile
           icon={Zap}
-          label="PnL azi"
+          label="PnL azi (live)"
           accentClass="bg-amber-400/20"
-          hint={`Eșantion tranzacții · ${today}`}
+          hint={`Tranzacții reale · zi UTC ${todayLabel}`}
         >
           <span className={todayProfit >= 0 ? "text-emerald-400" : "text-rose-400"}>
             {todayProfit >= 0 ? "+" : ""}
@@ -203,7 +198,12 @@ export default function DashboardPage() {
           </span>
           <span className="text-lg font-normal text-muted-foreground sm:text-xl"> USDC</span>
         </StatTile>
-        <StatTile icon={Percent} label="Win rate (eșantion)" accentClass="bg-cyan-500/20" hint="Pe tranzacții cu PnL">
+        <StatTile
+          icon={Percent}
+          label="Win rate live"
+          accentClass="bg-cyan-500/20"
+          hint="Pe tranzacții reale cu PnL înregistrat"
+        >
           <span className="text-cyan-300">{(winRate * 100).toFixed(1)}%</span>
         </StatTile>
         <StatTile

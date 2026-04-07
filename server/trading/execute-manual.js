@@ -1,6 +1,8 @@
+import mongoose from "mongoose";
 import { connectDB } from "@/models/db";
 import User from "@/models/User";
 import Trade from "@/models/Trade";
+import Bot from "@/models/Bot";
 import { decryptSecret } from "@/lib/security/crypto";
 import { getPrice, placeMarketSellSpotClamped, placeOrder } from "@/lib/binance/service";
 import { createExchange, withRetries, syncServerTime } from "@/lib/binance/client";
@@ -34,6 +36,17 @@ async function bumpUserStats(userId, pnl, win) {
   });
 }
 
+/** Pentru AI Pilot: leagă tranzacția manuală de botul de pe aceeași pereche (control în UI). */
+async function resolvePilotLinkedBotId(userId, pair, preferredBotId) {
+  const p = String(pair);
+  if (preferredBotId && mongoose.isValidObjectId(String(preferredBotId))) {
+    const byId = await Bot.findOne({ _id: preferredBotId, userId, pair: p }).select("_id").lean();
+    if (byId) return byId._id;
+  }
+  const byPair = await Bot.findOne({ userId, pair: p }).select("_id").lean();
+  return byPair?._id ?? null;
+}
+
 export function isDustOrMinNotionalError(e) {
   const code = e && typeof e === "object" && e.code;
   if (["BELOW_MIN_NOTIONAL", "BELOW_MIN_AMOUNT", "DUST_AMOUNT"].includes(String(code))) return true;
@@ -48,6 +61,7 @@ export function isDustOrMinNotionalError(e) {
 /**
  * Spot manual (market). `spendQuote` în moneda cotei (implicit USDC); `amountBase` = mărime bază.
  * `fullExit`: pentru închidere live — repetă vânzări până se acoperă rotunjirile Binance; curăță praf rămas în carte.
+ * `associateBotForControl`: doar AI Pilot — pune `botId` pe Trade (botul de pe pereche sau `pilotBotId`).
  */
 export async function executeManualTrade({
   userId,
@@ -57,11 +71,18 @@ export async function executeManualTrade({
   amountBase,
   spendQuote,
   fullExit = false,
+  associateBotForControl = false,
+  pilotBotId = null,
 }) {
   await connectDB();
   const user = await User.findById(userId);
   if (!user) {
     return { ok: false, error: "User not found" };
+  }
+
+  let linkedBotId = null;
+  if (associateBotForControl) {
+    linkedBotId = await resolvePilotLinkedBotId(userId, pair, pilotBotId);
   }
 
   const s = String(side).toLowerCase() === "sell" ? "sell" : "buy";
@@ -139,7 +160,7 @@ export async function executeManualTrade({
 
       const tr = await Trade.create({
         userId,
-        botId: null,
+        botId: linkedBotId,
         pair,
         side: s,
         quantity: qty,
@@ -150,7 +171,7 @@ export async function executeManualTrade({
         status: "simulated",
         isPaper: true,
         tradeSource: "manual",
-        meta: { paper: true },
+        meta: { paper: true, ...(associateBotForControl ? { aiPilotControl: true } : {}) },
       });
       return { ok: true, trade: tr };
     }
@@ -172,7 +193,7 @@ export async function executeManualTrade({
 
     const tr = await Trade.create({
       userId,
-      botId: null,
+      botId: linkedBotId,
       pair,
       side: "sell",
       quantity: qty,
@@ -183,7 +204,7 @@ export async function executeManualTrade({
       status: "simulated",
       isPaper: true,
       tradeSource: "manual",
-      meta: { paper: true },
+      meta: { paper: true, ...(associateBotForControl ? { aiPilotControl: true } : {}) },
     });
     await bumpUserStats(userId, pnl, pnl > 0);
     return { ok: true, trade: tr };
@@ -289,7 +310,7 @@ export async function executeManualTrade({
         const pnl = soldSum * (avgSell - b.avg);
         const tr = await Trade.create({
           userId,
-          botId: null,
+          botId: linkedBotId,
           pair,
           side: "sell",
           quantity: soldSum,
@@ -303,6 +324,7 @@ export async function executeManualTrade({
             orderId: legs[0]?.orderId,
             sellLegs: legs.length > 1 ? legs : undefined,
             fullExit: true,
+            ...(associateBotForControl ? { aiPilotControl: true } : {}),
           },
         });
         await bumpUserStats(userId, pnl, pnl > 0);
@@ -331,7 +353,7 @@ export async function executeManualTrade({
 
       const tr = await Trade.create({
         userId,
-        botId: null,
+        botId: linkedBotId,
         pair,
         side: "buy",
         quantity: filled,
@@ -340,7 +362,7 @@ export async function executeManualTrade({
         status: "filled",
         isPaper: false,
         tradeSource: "manual",
-        meta: { orderId: order.id },
+        meta: { orderId: order.id, ...(associateBotForControl ? { aiPilotControl: true } : {}) },
       });
       return { ok: true, trade: tr };
     }
@@ -356,7 +378,7 @@ export async function executeManualTrade({
 
     const tr = await Trade.create({
       userId,
-      botId: null,
+      botId: linkedBotId,
       pair,
       side: "sell",
       quantity: filled,
@@ -366,7 +388,7 @@ export async function executeManualTrade({
       status: "filled",
       isPaper: false,
       tradeSource: "manual",
-      meta: { orderId: order.id },
+      meta: { orderId: order.id, ...(associateBotForControl ? { aiPilotControl: true } : {}) },
     });
     await bumpUserStats(userId, pnl, pnl > 0);
     return { ok: true, trade: tr };
@@ -374,7 +396,7 @@ export async function executeManualTrade({
     const msg = e instanceof Error ? e.message : String(e);
     await Trade.create({
       userId,
-      botId: null,
+      botId: linkedBotId,
       pair,
       side: s,
       quantity: qty,
@@ -384,6 +406,7 @@ export async function executeManualTrade({
       isPaper: false,
       tradeSource: "manual",
       errorMessage: msg,
+      meta: associateBotForControl ? { aiPilotControl: true } : {},
     });
     return { ok: false, error: await mapBinanceUserMessageAsync(e) };
   }

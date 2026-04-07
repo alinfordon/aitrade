@@ -11,9 +11,14 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const limit = Math.min(Number(searchParams.get("limit") || 50), 200);
   const botIdRaw = searchParams.get("botId");
+  const aiPilotControl =
+    searchParams.get("aiPilotControl") === "1" || searchParams.get("aiPilot") === "1";
 
   await connectDB();
   const filter = { userId: session.userId };
+  if (aiPilotControl) {
+    filter["meta.aiPilotControl"] = true;
+  }
   if (botIdRaw) {
     if (!mongoose.Types.ObjectId.isValid(botIdRaw)) {
       return NextResponse.json({ error: "Invalid botId" }, { status: 400 });

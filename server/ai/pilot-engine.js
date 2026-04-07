@@ -255,6 +255,7 @@ export async function runAiPilotForUser(userId) {
       mode: orderMode,
       amountBase: qty,
       fullExit: true,
+      associateBotForControl: true,
     });
     actionsUsed++;
     applied.push({
@@ -323,6 +324,52 @@ export async function runAiPilotForUser(userId) {
     applied.push({ botId: id, actiune: "mentine", ok: true, motiv });
   }
 
+  /**
+   * Înainte de cumpărări manuale: dacă AI propune bot nou pe aceeași pereche,
+   * botul există în DB și tranzacțiile manuale pot fi legate de `botId`.
+   */
+  let pilotCreatedBotId = null;
+  let pilotCreatedPair = null;
+  if (createBotEnabled && actionsUsed < maxTradesPerRun && ai.botNou && typeof ai.botNou === "object") {
+    const bn = ai.botNou;
+    const pairBn = normPair(bn.pereche);
+    const goal = String(bn.obiectivStrategie || "").trim();
+    if (pairBn && goal.length >= 8 && !perechiBotiExistente.includes(pairBn)) {
+      const riskRaw = String(bn.risc || "balanced").toLowerCase();
+      const risk =
+        riskRaw === "conservative" || riskRaw === "aggressive" ? riskRaw : "balanced";
+      const r = await createPilotStrategyAndBot({
+        userId,
+        subscriptionPlan: user.subscriptionPlan || "free",
+        pair: pairBn,
+        goal,
+        riskStyle: risk,
+        strategyName: bn.numeStrategie,
+        activate: Boolean(bn.pornesteActiv),
+        mode: orderMode,
+      });
+      actionsUsed++;
+      if (r.ok) {
+        perechiBotiExistente.push(pairBn);
+        pilotCreatedPair = pairBn;
+        pilotCreatedBotId = r.bot?._id ? String(r.bot._id) : null;
+      }
+      applied.push({
+        tip: "bot_nou",
+        pair: pairBn,
+        ok: r.ok,
+        detail: r.error || (r.activated ? "creat_si_activ" : "creat"),
+        activateError: r.activateError,
+      });
+    } else {
+      applied.push({
+        tip: "bot_nou",
+        ok: false,
+        detail: "pereche_invalida_sau_goal_scurt_sau_bot_existent",
+      });
+    }
+  }
+
   /** --- Faza 3: cumpărări manuale --- */
   for (const m of manualBuys) {
     if (!manualEnabled || manualBlocked || actionsUsed >= maxTradesPerRun) break;
@@ -355,12 +402,17 @@ export async function runAiPilotForUser(userId) {
       continue;
     }
 
+    const pilotBotIdForBuy =
+      pilotCreatedBotId && pilotCreatedPair && pair === pilotCreatedPair ? pilotCreatedBotId : null;
+
     const r = await executeManualTrade({
       userId,
       pair,
       side: "buy",
       mode: orderMode,
       spendQuote: spend,
+      associateBotForControl: true,
+      ...(pilotBotIdForBuy ? { pilotBotId: pilotBotIdForBuy } : {}),
     });
     actionsUsed++;
     applied.push({
@@ -371,45 +423,6 @@ export async function runAiPilotForUser(userId) {
       spendQuote: spend,
       motiv: String(m.motiv || ""),
     });
-  }
-
-  /** --- Faza 4: bot + strategie noi --- */
-  if (createBotEnabled && actionsUsed < maxTradesPerRun && ai.botNou && typeof ai.botNou === "object") {
-    const bn = ai.botNou;
-    const pair = normPair(bn.pereche);
-    const goal = String(bn.obiectivStrategie || "").trim();
-    if (pair && goal.length >= 8 && !perechiBotiExistente.includes(pair)) {
-      const riskRaw = String(bn.risc || "balanced").toLowerCase();
-      const risk =
-        riskRaw === "conservative" || riskRaw === "aggressive" ? riskRaw : "balanced";
-      const r = await createPilotStrategyAndBot({
-        userId,
-        subscriptionPlan: user.subscriptionPlan || "free",
-        pair,
-        goal,
-        riskStyle: risk,
-        strategyName: bn.numeStrategie,
-        activate: Boolean(bn.pornesteActiv),
-        mode: orderMode,
-      });
-      actionsUsed++;
-      if (r.ok) {
-        perechiBotiExistente.push(pair);
-      }
-      applied.push({
-        tip: "bot_nou",
-        pair,
-        ok: r.ok,
-        detail: r.error || (r.activated ? "creat_si_activ" : "creat"),
-        activateError: r.activateError,
-      });
-    } else {
-      applied.push({
-        tip: "bot_nou",
-        ok: false,
-        detail: "pereche_invalida_sau_goal_scurt_sau_bot_existent",
-      });
-    }
   }
 
   user = await User.findById(userId);
