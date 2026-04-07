@@ -16,9 +16,14 @@ export async function GET(request) {
   const tradeSourceRaw = searchParams.get("tradeSource");
   const aiPilotControl =
     searchParams.get("aiPilotControl") === "1" || searchParams.get("aiPilot") === "1";
+  /** Toate tranzacțiile cu botId setat (motor cron + manual pilot legat de bot). */
+  const anyBot = searchParams.get("anyBot") === "1";
 
   await connectDB();
   const filter = { userId: session.userId };
+  if (anyBot) {
+    filter.botId = { $exists: true, $ne: null };
+  }
   if (aiPilotControl) {
     filter["meta.aiPilotControl"] = true;
   }

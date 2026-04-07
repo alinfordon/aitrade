@@ -5,7 +5,9 @@ import { decryptSecret } from "@/lib/security/crypto";
 import { getBalance } from "@/lib/binance/service";
 import { requireAuth } from "@/lib/api-helpers";
 import { respondIfMongoMissing } from "@/lib/mongo-env";
+import Bot from "@/models/Bot";
 import { buildSuggestedPairs, paperBalancesList } from "@/lib/wallet/suggest-pairs";
+import { paperUsdcOverview, realUsdcOverview } from "@/lib/wallet/usdc-overview";
 import { DEFAULT_QUOTE_ASSET, getManualPaperQuoteBalance } from "@/lib/market-defaults";
 import { mapBinanceUserMessageAsync } from "@/lib/binance/map-exchange-error";
 
@@ -101,6 +103,19 @@ export async function GET() {
 
   const suggestedPairs = buildSuggestedPairs(real.balances);
 
+  const userBots = await Bot.find({ userId: session.userId })
+    .select("mode paperState")
+    .lean();
+  const overviewPaper = paperUsdcOverview(paperQuote, book, userBots);
+  let overviewReal = null;
+  if (real.connected && Array.isArray(real.balances)) {
+    try {
+      overviewReal = await realUsdcOverview(real.balances);
+    } catch {
+      overviewReal = { usdcFree: 0, inAssetsUsdcEstimate: 0, error: "estimate_failed" };
+    }
+  }
+
   return NextResponse.json({
     hasApiKeys: hasKeys,
     paper: {
@@ -111,5 +126,9 @@ export async function GET() {
     },
     real,
     suggestedPairs,
+    overview: {
+      paper: overviewPaper,
+      real: overviewReal,
+    },
   });
 }

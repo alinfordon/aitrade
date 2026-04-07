@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { DEFAULT_SPOT_PAIR } from "@/lib/market-defaults";
 import { PageHeader } from "@/components/shell/PageHeader";
+import { BotsTradesColumn } from "@/components/BotsTradesColumn";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
 import { cn } from "@/lib/utils";
 import { Pencil, Trash2 } from "lucide-react";
@@ -232,9 +233,11 @@ export default function BotsPage() {
     <div className="space-y-8">
       <PageHeader
         title="Bots"
-        description="La Stop, dacă ai poziție deschisă, poți închide prin sell (paper simulat / real pe Binance) sau muta poziția în Live ca tranzacție manuală (doar spot)."
+        description="La Stop, dacă ai poziție deschisă, poți închide prin sell (paper simulat / real pe Binance) sau muta poziția în Live ca tranzacție manuală (doar spot). În dreapta: istoric tranzacții asociate boților."
       />
 
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,400px)] xl:gap-8 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="min-w-0 space-y-8">
       <Card>
         <CardHeader>
           <CardTitle>Bot nou</CardTitle>
@@ -342,6 +345,12 @@ export default function BotsPage() {
           </Card>
         );
         })}
+      </div>
+
+        </div>
+        <aside className="min-w-0">
+          <BotsTradesColumn />
+        </aside>
       </div>
 
       <Dialog
