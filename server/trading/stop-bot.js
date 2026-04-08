@@ -8,6 +8,7 @@ import {
 } from "@/lib/binance/service";
 import { decryptSecret } from "@/lib/security/crypto";
 import { isDustOrMinNotionalError } from "@/server/trading/execute-manual";
+import { isBinanceMarketClosedError } from "@/lib/binance/map-exchange-error";
 import { acquireOrderLock } from "@/lib/redis/cache";
 import { replicateTradeForFollowers } from "@/server/copy-trading";
 
@@ -327,17 +328,19 @@ export async function stopBotWithDisposition(args) {
         }
         bot.positionState = emptyPositionState();
       } catch (e) {
-        await Trade.create({
-          userId: bot.userId,
-          botId: bot._id,
-          pair,
-          side: "sell",
-          quantity: open.qty,
-          price,
-          status: "failed",
-          isPaper: false,
-          errorMessage: String(e?.message || e),
-        });
+        if (!isBinanceMarketClosedError(e)) {
+          await Trade.create({
+            userId: bot.userId,
+            botId: bot._id,
+            pair,
+            side: "sell",
+            quantity: open.qty,
+            price,
+            status: "failed",
+            isPaper: false,
+            errorMessage: String(e?.message || e),
+          });
+        }
         return {
           ok: false,
           error: `Ordin sell eșuat: ${e instanceof Error ? e.message : String(e)}`,

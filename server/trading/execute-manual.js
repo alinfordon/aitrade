@@ -7,7 +7,7 @@ import { decryptSecret } from "@/lib/security/crypto";
 import { getPrice, placeMarketSellSpotClamped, placeOrder } from "@/lib/binance/service";
 import { createExchange, withRetries, syncServerTime } from "@/lib/binance/client";
 import { DEFAULT_QUOTE_ASSET, getManualPaperQuoteBalance, normSpotPair } from "@/lib/market-defaults";
-import { mapBinanceUserMessageAsync } from "@/lib/binance/map-exchange-error";
+import { mapBinanceUserMessageAsync, isBinanceMarketClosedError } from "@/lib/binance/map-exchange-error";
 
 function parsePair(pair) {
   const [base, quote] = String(pair).split("/");
@@ -398,6 +398,9 @@ export async function executeManualTrade({
     await bumpUserStats(userId, pnl, pnl > 0);
     return { ok: true, trade: tr };
   } catch (e) {
+    if (isBinanceMarketClosedError(e)) {
+      return { ok: false, error: await mapBinanceUserMessageAsync(e) };
+    }
     const msg = e instanceof Error ? e.message : String(e);
     await Trade.create({
       userId,

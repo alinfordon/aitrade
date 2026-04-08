@@ -23,6 +23,7 @@ import { maxBotsForPlan } from "@/lib/plans";
 import { BinanceConnectionBadge } from "@/components/BinanceConnectionBadge";
 import { RealSpotBalancesTable } from "@/components/RealSpotBalancesTable";
 import { UsdcEquityCharts } from "@/components/dashboard/UsdcEquityCharts";
+import { TradeWinLossCharts } from "@/components/dashboard/TradeWinLossCharts";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
 import { cn } from "@/lib/utils";
 
@@ -304,7 +305,18 @@ export default function DashboardPage() {
           rezultatului realizat în timp, nu soldul brut din cont Binance.
         </p>
         <UsdcEquityCharts />
-      </section>      
+      </section>
+
+      <section className="relative mt-10 space-y-3">
+        <div className="flex items-center gap-2">
+          <Activity className="h-4 w-4 text-primary" />
+          <h2 className="font-display text-lg font-semibold tracking-tight">Tranzacții câștig / pierdere (live)</h2>
+        </div>
+        <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
+          Distribuție zilnică și lunară după rezultat: doar tranzacții reale cu PnL înregistrat (nu paper).
+        </p>
+        <TradeWinLossCharts />
+      </section>
 
       <section className="relative mt-8">
         <div className="mb-4 flex items-center gap-2">

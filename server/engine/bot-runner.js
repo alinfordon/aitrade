@@ -11,6 +11,7 @@ import {
   spotMaxSellableBaseFromFree,
 } from "@/lib/binance/service";
 import { withRetries } from "@/lib/binance/client";
+import { isBinanceMarketClosedError } from "@/lib/binance/map-exchange-error";
 import { isDustOrMinNotionalError } from "@/server/trading/execute-manual";
 import { ohlcvToSeries } from "@/server/candles";
 import { evaluateStrategy } from "@/server/engine/strategy-eval";
@@ -179,7 +180,10 @@ export async function runSingleBot(botId) {
         const ok = await acquireOrderLock(String(bot._id), digest);
         if (!ok) return true;
 
-        const logFailedClose = async (msg) => {
+        const logFailedClose = async (errLike) => {
+          if (isBinanceMarketClosedError(errLike)) return;
+          const msg =
+            errLike instanceof Error ? errLike.message : String(errLike ?? "close failed");
           try {
             await Trade.create({
               userId: bot.userId,
@@ -190,7 +194,7 @@ export async function runSingleBot(botId) {
               price,
               status: "failed",
               isPaper: false,
-              errorMessage: String(msg || "close failed"),
+              errorMessage: msg,
             });
           } catch {
             /* nu blocăm revenirea la flat */
@@ -241,7 +245,7 @@ export async function runSingleBot(botId) {
               console.error("[bot-runner] futures close log", e);
             }
           } catch (e) {
-            await logFailedClose(e?.message || e);
+            await logFailedClose(e);
           }
           pos = { open: false, side: "buy", entryPrice: 0, quantity: 0 };
           bot.positionState = pos;
@@ -351,7 +355,7 @@ export async function runSingleBot(botId) {
           await bot.save();
           return true;
         } catch (e) {
-          await logFailedClose(e?.message || e);
+          await logFailedClose(e);
           pos = { open: false, side: "buy", entryPrice: 0, quantity: 0 };
           bot.positionState = pos;
           await bot.save();
@@ -471,17 +475,19 @@ export async function runSingleBot(botId) {
       });
       return { ok: true, action: "live_buy" };
     } catch (e) {
-      await Trade.create({
-        userId: bot.userId,
-        botId: bot._id,
-        pair: bot.pair,
-        side: "buy",
-        quantity: qty,
-        price,
-        status: "failed",
-        isPaper: false,
-        errorMessage: String(e?.message || e),
-      });
+      if (!isBinanceMarketClosedError(e)) {
+        await Trade.create({
+          userId: bot.userId,
+          botId: bot._id,
+          pair: bot.pair,
+          side: "buy",
+          quantity: qty,
+          price,
+          status: "failed",
+          isPaper: false,
+          errorMessage: String(e?.message || e),
+        });
+      }
       bot.lastRun = new Date();
       await bot.save();
       return { ok: false, error: String(e?.message || e) };

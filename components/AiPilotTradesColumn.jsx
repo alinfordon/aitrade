@@ -87,7 +87,8 @@ export function AiPilotTradesColumn() {
               Tranzacții AI Pilot
             </CardTitle>
             <CardDescription className="text-xs leading-relaxed">
-              Ordine manuale deschise/închise de pilot, legate de bot când există pe pereche.
+              Ordine manuale deschise/închise de pilot, legate de bot când există pe pereche. La „eșuat”, treci cu mouse-ul
+              peste badge pentru motivul salvat (tooltip).
             </CardDescription>
             <div
               className="mt-3 flex max-w-xs rounded-lg border border-border/80 bg-muted/30 p-0.5"
@@ -239,9 +240,17 @@ export function AiPilotTradesColumn() {
                             </Badge>
                           )}
                           {t.status === "failed" && (
-                            <Badge variant="destructive" className="text-[10px]">
-                              eșuat
-                            </Badge>
+                            <span
+                              className="inline-flex cursor-help"
+                              title={
+                                String(t.errorMessage || "").trim() ||
+                                "Motiv indisponibil — verifică logurile serverului."
+                              }
+                            >
+                              <Badge variant="destructive" className="pointer-events-none text-[10px]">
+                                eșuat
+                              </Badge>
+                            </span>
                           )}
                           {botId ? (
                             <Link
