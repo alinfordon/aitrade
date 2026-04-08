@@ -29,18 +29,37 @@ export async function GET() {
     .sort({ updatedAt: -1 })
     .lean();
 
+  const botIdSet = new Set(bots.map((b) => String(b._id)));
+  const storedRaw = (pilot.botIds || []).map((id) => String(id));
+  const cleanedBotIds = [
+    ...new Set(storedRaw.filter((id) => mongoose.isValidObjectId(id) && botIdSet.has(id))),
+  ];
+  const hasStaleOrDuplicate =
+    cleanedBotIds.length !== storedRaw.length || new Set(storedRaw).size !== storedRaw.length;
+  if (hasStaleOrDuplicate) {
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          "aiPilot.botIds": cleanedBotIds.map((id) => new mongoose.Types.ObjectId(id)),
+        },
+      }
+    );
+  }
+
   return NextResponse.json({
     canUse: canUseAiPilot(session.subscriptionPlan),
     settings: {
       enabled: Boolean(pilot.enabled),
       intervalMinutes: Number(pilot.intervalMinutes) || 15,
-      botIds: (pilot.botIds || []).map((id) => String(id)),
+      botIds: cleanedBotIds,
       maxUsdcPerTrade: Number(pilot.maxUsdcPerTrade) || 150,
       pilotOrderMode: pilot.pilotOrderMode === "real" ? "real" : "paper",
       manualTradingEnabled: Boolean(pilot.manualTradingEnabled),
       createBotFromAnalysis: Boolean(pilot.createBotFromAnalysis),
       maxTradesPerRun: Math.min(20, Math.max(1, Number(pilot.maxTradesPerRun) || 3)),
       maxOpenManualPositions: Math.min(20, Math.max(1, Number(pilot.maxOpenManualPositions) || 3)),
+      maxPilotBots: Math.min(20, Math.max(1, Number(pilot.maxPilotBots) || 5)),
       lastRunAt: pilot.lastRunAt ? new Date(pilot.lastRunAt).toISOString() : null,
       lastSummary: String(pilot.lastSummary || ""),
       lastError: String(pilot.lastError || ""),
@@ -85,22 +104,23 @@ export async function PATCH(request) {
 
   await connectDB();
 
-  const oids = [];
+  let oids = [];
+  let prunedStaleBotIds = false;
   if (parsed.data.botIds != null) {
-    for (const id of parsed.data.botIds) {
+    const uniqueStr = [...new Set(parsed.data.botIds.map((id) => String(id)))];
+    for (const id of uniqueStr) {
       if (!mongoose.isValidObjectId(id)) {
         return NextResponse.json({ error: `ID bot invalid: ${id}` }, { status: 400 });
       }
-      oids.push(new mongoose.Types.ObjectId(id));
     }
-    if (oids.length) {
-      const n = await Bot.countDocuments({ userId: session.userId, _id: { $in: oids } });
-      if (n !== oids.length) {
-        return NextResponse.json(
-          { error: "Unul sau mai mulți boți nu aparțin contului tău." },
-          { status: 400 }
-        );
-      }
+    const uniqueObj = uniqueStr.map((id) => new mongoose.Types.ObjectId(id));
+    if (uniqueObj.length) {
+      const found = await Bot.find({ userId: session.userId, _id: { $in: uniqueObj } })
+        .select("_id")
+        .lean();
+      const foundSet = new Set(found.map((b) => String(b._id)));
+      oids = uniqueStr.filter((id) => foundSet.has(id)).map((id) => new mongoose.Types.ObjectId(id));
+      prunedStaleBotIds = oids.length !== uniqueStr.length;
     }
   }
 
@@ -115,6 +135,7 @@ export async function PATCH(request) {
   if (patch.createBotFromAnalysis != null) $set["aiPilot.createBotFromAnalysis"] = patch.createBotFromAnalysis;
   if (patch.maxTradesPerRun != null) $set["aiPilot.maxTradesPerRun"] = patch.maxTradesPerRun;
   if (patch.maxOpenManualPositions != null) $set["aiPilot.maxOpenManualPositions"] = patch.maxOpenManualPositions;
+  if (patch.maxPilotBots != null) $set["aiPilot.maxPilotBots"] = patch.maxPilotBots;
 
   const user = await User.findByIdAndUpdate(session.userId, { $set }, { new: true });
   if (!user) {
@@ -124,6 +145,7 @@ export async function PATCH(request) {
   const ap = user.aiPilot && typeof user.aiPilot === "object" ? user.aiPilot : {};
   return NextResponse.json({
     ok: true,
+    ...(prunedStaleBotIds ? { prunedStaleBotIds: true } : {}),
     settings: {
       enabled: Boolean(ap.enabled),
       intervalMinutes: Number(ap.intervalMinutes) || 15,
@@ -134,6 +156,7 @@ export async function PATCH(request) {
       createBotFromAnalysis: Boolean(ap.createBotFromAnalysis),
       maxTradesPerRun: Math.min(20, Math.max(1, Number(ap.maxTradesPerRun) || 3)),
       maxOpenManualPositions: Math.min(20, Math.max(1, Number(ap.maxOpenManualPositions) || 3)),
+      maxPilotBots: Math.min(20, Math.max(1, Number(ap.maxPilotBots) || 5)),
     },
   });
 }

@@ -14,6 +14,7 @@ import {
   Radio,
   RefreshCw,
   Sparkles,
+  Trash2,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -121,13 +122,14 @@ export default function AdminAnalyticsPage() {
   const [data, setData] = useState(null);
   const [cronLogs, setCronLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [cleaningCron, setCleaningCron] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [r, rCron] = await Promise.all([
         fetch("/api/admin/analytics"),
-        fetch("/api/admin/cron-runs?limit=15"),
+        fetch("/api/admin/cron-runs?limit=50"),
       ]);
       const j = await r.json();
       let logs = [];
@@ -150,6 +152,33 @@ export default function AdminAnalyticsPage() {
       setLoading(false);
     }
   }, []);
+
+  const cleanAllCronLogs = useCallback(async () => {
+    if (
+      !window.confirm(
+        "Ștergi toate înregistrările de execuții cron din baza de date? Acțiunea nu poate fi anulată."
+      )
+    ) {
+      return;
+    }
+    setCleaningCron(true);
+    try {
+      const r = await fetch("/api/admin/cron-runs", { method: "DELETE" });
+      const j = await r.json();
+      if (!r.ok) {
+        toast.error(typeof j.error === "string" ? j.error : "Eroare la ștergere");
+        return;
+      }
+      toast.success(
+        `Șterse ${typeof j.deletedCount === "number" ? j.deletedCount : 0} înregistrări cron`
+      );
+      await load();
+    } catch {
+      toast.error("Rețea sau server");
+    } finally {
+      setCleaningCron(false);
+    }
+  }, [load]);
 
   useEffect(() => {
     void load();
@@ -352,15 +381,29 @@ export default function AdminAnalyticsPage() {
           </div>
 
           <Card className="border-white/[0.08] bg-card/40 backdrop-blur-md">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 font-display text-base">
-                <Clock className="h-4 w-4 text-sky-400" />
-                Ultimele execuții cron (HTTP)
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Log local din Mongo la apelurile <span className="font-mono">/api/cron/*</span> — până la 15
-                rânduri; detaliu JSON e rezumat (nu răspuns integral).
-              </CardDescription>
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 space-y-1">
+                <CardTitle className="flex items-center gap-2 font-display text-base">
+                  <Clock className="h-4 w-4 text-sky-400" />
+                  Ultimele execuții cron (HTTP)
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Log în Mongo la <span className="font-mono">/api/cron/*</span>. Se păstrează automat doar{" "}
+                  <strong className="text-foreground">ultimele 50</strong> rulări; detaliul JSON e rezumat (nu
+                  răspuns integral).
+                </CardDescription>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={loading || cleaningCron}
+                className="shrink-0 border-rose-500/40 text-rose-300 hover:bg-rose-500/10 hover:text-rose-200"
+                onClick={() => void cleanAllCronLogs()}
+              >
+                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                {cleaningCron ? "Se șterge…" : "Curăță cron"}
+              </Button>
             </CardHeader>
             <CardContent>
               {cronLogs.length === 0 ? (

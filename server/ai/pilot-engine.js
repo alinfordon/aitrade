@@ -8,6 +8,7 @@ import { tryActivateBot } from "@/server/bots/try-activate-bot";
 import { closeBotOpenPositionMarketOnly } from "@/server/trading/stop-bot";
 import { executeManualTrade } from "@/server/trading/execute-manual";
 import { createPilotStrategyAndBot } from "@/server/ai/pilot-create-bot";
+import { readPilotOpen } from "@/server/ai/pilot-read-open";
 
 function normPair(p) {
   return String(p || "")
@@ -45,29 +46,6 @@ function manualPayloadFromUser(user) {
       };
     })
     .filter(Boolean);
-}
-
-function readPilotOpen(bot) {
-  if (bot.mode === "paper") {
-    const p = bot.paperState || {};
-    if (p.open && Number(p.baseBalance) > 1e-12) {
-      return {
-        has: true,
-        avgEntry: Number(p.avgEntry) || 0,
-        qty: Number(p.baseBalance) || 0,
-      };
-    }
-  } else {
-    const pos = bot.positionState || {};
-    if (pos.open && Number(pos.quantity) > 1e-12) {
-      return {
-        has: true,
-        avgEntry: Number(pos.entryPrice) || 0,
-        qty: Number(pos.quantity) || 0,
-      };
-    }
-  }
-  return { has: false, avgEntry: 0, qty: 0 };
 }
 
 function normalizeBotAction(a) {
@@ -124,8 +102,9 @@ export async function runAiPilotForUser(userId) {
   const createBotEnabled = Boolean(cfg.createBotFromAnalysis);
   const maxTradesPerRun = Math.min(20, Math.max(1, Number(cfg.maxTradesPerRun) || 3));
   const maxOpenManual = Math.min(20, Math.max(1, Number(cfg.maxOpenManualPositions) || 3));
-  const maxUsdc = Math.max(10, Number(cfg.maxUsdcPerTrade) || 150);
+  const maxUsdc = Math.max(2, Number(cfg.maxUsdcPerTrade) || 150);
   const orderMode = cfg.pilotOrderMode === "real" ? "real" : "paper";
+  const maxPilotBots = Math.min(20, Math.max(1, Number(cfg.maxPilotBots) || 5));
 
   if (!allowedIds.length && !manualEnabled && !createBotEnabled) {
     user.aiPilot.lastRunAt = new Date();
@@ -198,6 +177,7 @@ export async function runAiPilotForUser(userId) {
     maxPozitiiManualeSimultane: maxOpenManual,
     tranzactiiManualPermise: manualEnabled,
     creareBotPermisa: createBotEnabled,
+    maxBoțiPilotSimultan: maxPilotBots,
   };
 
   async function refreshUser() {
@@ -358,8 +338,21 @@ export async function runAiPilotForUser(userId) {
         strategyName: bn.numeStrategie,
         activate: Boolean(bn.pornesteActiv),
         mode: orderMode,
+        maxPilotBots,
+        gainerPairSet,
       });
       actionsUsed++;
+      if (Array.isArray(r.pilotEvicted)) {
+        for (const ev of r.pilotEvicted) {
+          applied.push({
+            tip: "pilot_eliminat",
+            pair: ev.pair,
+            botId: ev.botId,
+            ok: true,
+            detail: "fara_pozitie_deschisa",
+          });
+        }
+      }
       if (r.ok) {
         perechiBotiExistente.push(pairBn);
         pilotCreatedPair = pairBn;
@@ -408,7 +401,7 @@ export async function runAiPilotForUser(userId) {
     let spend = Number(m.sumaUsdc);
     if (!Number.isFinite(spend) || spend <= 0) spend = maxUsdc;
     spend = Math.min(spend, maxUsdc);
-    if (spend < 10) {
+    if (spend < 2) {
       applied.push({ tip: "manual_cumpara", pair, ok: false, detail: "suma_prea_mica" });
       continue;
     }

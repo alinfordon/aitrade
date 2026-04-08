@@ -11,8 +11,8 @@ PORT=3010
 cd $APP_DIR || exit
 echo "?? Fixing permissions..."
 sudo chown -R $USER:$USER $APP_DIR
-find $APP_DIR -type d -exec chmod 777 {} \;
-find $APP_DIR -type f -exec chmod 777 {} \;
+#find $APP_DIR -type d -exec chmod 777 {} \;
+#find $APP_DIR -type f -exec chmod 777 {} \;
 
 # 2?? Asigura-te ca Git ?tie ca directorul e sigur
 git config --global --add safe.directory $APP_DIR
@@ -29,6 +29,7 @@ npm install
 npm run build
 
 # 6?? Opre?te vechiul proces PM2 (daca exista)
+sudo fuser -k $PORT/tcp >/dev/null 2>&1 || true
 pm2 delete $APP_NAME >/dev/null 2>&1 || true
 
 # 7?? Porne?te aplica?ia cu PM2 pe portul corect

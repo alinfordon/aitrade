@@ -50,6 +50,8 @@ const UserSchema = new mongoose.Schema(
       maxTradesPerRun: { type: Number, default: 3 },
       /** Perechi distincte cu poziție manuală deschisă — plafon pentru intrări noi pe perechi noi */
       maxOpenManualPositions: { type: Number, default: 3 },
+      /** Max boți creați de pilot (strategie source=pilot); la depășire se pot elimina cei fără poziție deschisă. */
+      maxPilotBots: { type: Number, default: 5 },
       lastRunAt: { type: Date, default: null },
       lastSummary: { type: String, default: "" },
       lastError: { type: String, default: "" },

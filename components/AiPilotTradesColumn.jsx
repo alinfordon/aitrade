@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Bot } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 const POLL_MS = 15_000;
 
@@ -23,6 +24,8 @@ export function AiPilotTradesColumn() {
   const [daySummary, setDaySummary] = useState(null);
   const [dayLabel, setDayLabel] = useState("");
   const [loading, setLoading] = useState(true);
+  /** real = doar tranzacții live; paper = simulate / paper */
+  const [modeTab, setModeTab] = useState("real");
 
   const load = useCallback(async () => {
     const { start, end } = localDayBounds();
@@ -36,9 +39,10 @@ export function AiPilotTradesColumn() {
     );
 
     try {
-      const qs = `from=${encodeURIComponent(start.toISOString())}&to=${encodeURIComponent(end.toISOString())}`;
+      const paperParam = modeTab === "paper" ? "1" : "0";
+      const qs = `from=${encodeURIComponent(start.toISOString())}&to=${encodeURIComponent(end.toISOString())}&isPaper=${paperParam}`;
       const [r, rStats] = await Promise.all([
-        fetch("/api/trades?aiPilotControl=1&limit=80"),
+        fetch(`/api/trades?aiPilotControl=1&limit=80&isPaper=${paperParam}`),
         fetch(`/api/trades/pilot-daily-stats?${qs}`),
       ]);
       const j = await r.json();
@@ -64,9 +68,10 @@ export function AiPilotTradesColumn() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [modeTab]);
 
   useEffect(() => {
+    setLoading(true);
     void load();
     const id = setInterval(() => void load(), POLL_MS);
     return () => clearInterval(id);
@@ -84,6 +89,40 @@ export function AiPilotTradesColumn() {
             <CardDescription className="text-xs leading-relaxed">
               Ordine manuale deschise/închise de pilot, legate de bot când există pe pereche.
             </CardDescription>
+            <div
+              className="mt-3 flex max-w-xs rounded-lg border border-border/80 bg-muted/30 p-0.5"
+              role="tablist"
+              aria-label="Mod tranzacții pilot"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={modeTab === "real"}
+                className={cn(
+                  "flex-1 rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors",
+                  modeTab === "real"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setModeTab("real")}
+              >
+                Real (live)
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={modeTab === "paper"}
+                className={cn(
+                  "flex-1 rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors",
+                  modeTab === "paper"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setModeTab("paper")}
+              >
+                Paper
+              </button>
+            </div>
           </div>
           <Button type="button" size="sm" variant="secondary" className="shrink-0 text-xs" onClick={() => void load()}>
             Reîmprospătează
@@ -98,13 +137,13 @@ export function AiPilotTradesColumn() {
             </p>
             <p className="mt-0.5 text-xs capitalize leading-snug text-foreground/90">{dayLabel}</p>
             <p className="mt-1 text-[10px] text-muted-foreground">
-              Suma PnL din toate tranzacțiile pilot din intervalul local 00:00–24:00.
+              Suma PnL din tranzacțiile pilot {modeTab === "paper" ? "paper" : "live"} din intervalul local 00:00–24:00.
             </p>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div className="rounded-lg border border-white/[0.06] bg-background/40 px-3 py-2">
                 <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Câștig / pierdere</p>
                 <p
-                  className={`mt-1 font-mono text-xl font-semibold tabular-nums tracking-tight ${
+                  className={`mt-1 font-mono text-[12px] font-semibold tabular-nums tracking-tight ${
                     daySummary.totalPnl >= 0 ? "text-emerald-400" : "text-rose-400"
                   }`}
                 >
@@ -136,8 +175,9 @@ export function AiPilotTradesColumn() {
           <p className="p-4 text-sm text-muted-foreground">Se încarcă…</p>
         ) : trades.length === 0 ? (
           <p className="p-4 text-sm text-muted-foreground">
-            Încă nu există tranzacții marcate de pilot. După ce cron-ul rulează și există acțiuni manuale cu
-            control, acestea apar aici.
+            {modeTab === "paper"
+              ? "Încă nu există tranzacții pilot în modul paper pentru filtrul curent."
+              : "Încă nu există tranzacții pilot live (real). Verifică modul „Real” la ordine în setările pilot sau cron-ul."}
           </p>
         ) : (
           <div className="overflow-x-auto">

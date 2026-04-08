@@ -3,9 +3,22 @@ import { Bot, Strategy } from "@/models";
 import { maxBotsForPlan } from "@/lib/plans";
 import { generateStrategyFromUserGoal } from "@/lib/ai/strategy-from-prompt";
 import { tryActivateBot } from "@/server/bots/try-activate-bot";
+import { evictPilotBotsForNewCreation } from "@/server/ai/pilot-evict-bots";
 
 /**
  * Generează strategie (Gemini) și creează bot asociat. Perechea trebuie să fie liberă (fără alt bot user).
+ * @param {{
+ *   userId: string,
+ *   subscriptionPlan: string,
+ *   pair: string,
+ *   goal: string,
+ *   riskStyle?: string,
+ *   strategyName?: string,
+ *   activate?: boolean,
+ *   mode?: string,
+ *   maxPilotBots?: number,
+ *   gainerPairSet?: Set<string>,
+ * }} args
  */
 export async function createPilotStrategyAndBot(args) {
   const {
@@ -17,14 +30,12 @@ export async function createPilotStrategyAndBot(args) {
     strategyName,
     activate = false,
     mode = "paper",
+    maxPilotBots = 5,
+    gainerPairSet = new Set(),
   } = args;
 
   await connectDB();
   const max = maxBotsForPlan(subscriptionPlan);
-  const count = await Bot.countDocuments({ userId });
-  if (Number.isFinite(max) && count >= max) {
-    return { ok: false, error: "Plan bot limit reached.", status: 403 };
-  }
 
   const taken = await Bot.findOne({ userId, pair }).select("_id").lean();
   if (taken) {
@@ -40,6 +51,25 @@ export async function createPilotStrategyAndBot(args) {
     });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e), status: 400 };
+  }
+
+  const eviction = await evictPilotBotsForNewCreation({
+    userId,
+    maxPilotBots,
+    gainerPairSet,
+  });
+  if (!eviction.ok) {
+    return { ok: false, error: eviction.error || "Pilot bot limit.", status: 409 };
+  }
+
+  const countAfterEvict = await Bot.countDocuments({ userId });
+  if (Number.isFinite(max) && countAfterEvict >= max) {
+    return {
+      ok: false,
+      error:
+        "Limita de boți a planului este atinsă. Eliberează un slot (șterge un bot) sau așteaptă până pilotul poate roti un bot pilot fără poziție.",
+      status: 403,
+    };
   }
 
   const displayName = (strategyName && String(strategyName).trim()) || gen.name;
@@ -83,10 +113,11 @@ export async function createPilotStrategyAndBot(args) {
         bot,
         activateError: act.error,
         activated: false,
+        pilotEvicted: eviction.evicted,
       };
     }
-    return { ok: true, strategy: strat, bot: act.bot, activated: true };
+    return { ok: true, strategy: strat, bot: act.bot, activated: true, pilotEvicted: eviction.evicted };
   }
 
-  return { ok: true, strategy: strat, bot, activated: false };
+  return { ok: true, strategy: strat, bot, activated: false, pilotEvicted: eviction.evicted };
 }

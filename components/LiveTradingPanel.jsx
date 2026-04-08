@@ -20,6 +20,7 @@ const STRATEGY_SOURCE_LABELS = {
   optimized: "Optimizată (AI)",
   auto: "Generată AI Auto",
   marketplace: "Marketplace",
+  pilot: "AI Pilot",
 };
 
 function fmtLastRun(iso) {
@@ -242,6 +243,26 @@ export function LiveTradingPanel() {
     const p = normPair(selected.pair);
     return adoptCandidates.filter((b) => normPair(b.pair) === p);
   }, [kind, selected?.pair, adoptCandidates]);
+
+  const manualByOrigin = useMemo(() => {
+    const user = [];
+    const pilot = [];
+    for (const m of manual || []) {
+      if (m.origin === "pilot") pilot.push(m);
+      else user.push(m);
+    }
+    return { user, pilot };
+  }, [manual]);
+
+  const botsByOrigin = useMemo(() => {
+    const user = [];
+    const pilot = [];
+    for (const b of bots || []) {
+      if (b.origin === "pilot") pilot.push(b);
+      else user.push(b);
+    }
+    return { user, pilot };
+  }, [bots]);
 
   const fullSelectedBot = useMemo(() => {
     if (kind !== "bot" || !selected?.botId) return null;
@@ -857,6 +878,16 @@ export function LiveTradingPanel() {
       ? (markForPnl - selected.avgEntry) * selected.qty
       : null;
 
+  /** Cost estimativ în USDC (poziție long spot): cantitate bază × preț mediu intrare. */
+  const investedUsdcAtCost =
+    selected &&
+    Number.isFinite(Number(selected.qty)) &&
+    Number.isFinite(Number(selected.avgEntry)) &&
+    Number(selected.qty) > 0 &&
+    Number(selected.avgEntry) > 0
+      ? Number(selected.qty) * Number(selected.avgEntry)
+      : null;
+
   if (loading) {
     return <p className="text-sm text-muted-foreground">Se încarcă pozițiile…</p>;
   }
@@ -869,33 +900,102 @@ export function LiveTradingPanel() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Manual (carte)</CardTitle>
-            <CardDescription>Poziții din tranzacții manuale paper/real.</CardDescription>
+            <CardDescription>
+            Toate pozițiile deschise din carte, grupate: manual tău vs orchestrate de AI Pilot (după ultimul buy
+            manual din jurnal).
+          </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="max-h-[min(70vh,520px)] space-y-3 overflow-y-auto pr-1">
             {!manual.length ? (
               <p className="text-xs text-muted-foreground">Nicio poziție deschisă.</p>
             ) : (
-              manual.map((row) => (
-                <button
-                  key={row.pair}
-                  type="button"
-                  onClick={() => {
-                    setSelected(row);
-                    setKind("manual");
-                  }}
-                  className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                    selected?.pair === row.pair && kind === "manual"
-                      ? "border-primary bg-primary/10"
-                      : "border-border hover:bg-muted/50"
-                  }`}
-                >
-                  <div className="font-medium">{row.pair}</div>
-                  <div className="font-mono text-xs text-muted-foreground">
-                    qty {fmtQty(row.qty)} · medie {fmtPrice(row.avgEntry)}
-                    {row.markPrice != null ? ` · piață ${fmtPrice(row.markPrice)}` : ""}
+              <>
+                {manualByOrigin.user.length > 0 ? (
+                  <div className="space-y-1.5">
+                    <p className="sticky top-0 z-[1] bg-card/95 px-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur-sm">
+                      Tu · manual
+                    </p>
+                    {manualByOrigin.user.map((row) => (
+                      <button
+                        key={row.pair}
+                        type="button"
+                        onClick={() => {
+                          setSelected(row);
+                          setKind("manual");
+                        }}
+                        className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                          selected?.pair === row.pair && kind === "manual"
+                            ? "border-primary bg-primary/10"
+                            : "border-border hover:bg-muted/50"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium">{row.pair}</span>
+                          <div className="flex flex-wrap gap-1">
+                            {row.paper ? (
+                              <Badge variant="outline" className="text-[9px]">
+                                paper
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-[9px]">
+                                live
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <div className="font-mono text-xs text-muted-foreground">
+                          qty {fmtQty(row.qty)} · medie {fmtPrice(row.avgEntry)}
+                          {row.markPrice != null ? ` · piață ${fmtPrice(row.markPrice)}` : ""}
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                </button>
-              ))
+                ) : null}
+                {manualByOrigin.pilot.length > 0 ? (
+                  <div className="space-y-1.5">
+                    <p className="sticky top-0 z-[1] bg-card/95 px-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200/90 backdrop-blur-sm">
+                      AI Pilot
+                    </p>
+                    {manualByOrigin.pilot.map((row) => (
+                      <button
+                        key={row.pair}
+                        type="button"
+                        onClick={() => {
+                          setSelected(row);
+                          setKind("manual");
+                        }}
+                        className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                          selected?.pair === row.pair && kind === "manual"
+                            ? "border-primary bg-primary/10"
+                            : "border-amber-500/25 hover:bg-amber-500/[0.06]"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium">{row.pair}</span>
+                          <div className="flex flex-wrap gap-1">
+                            <Badge variant="outline" className="border-amber-500/40 text-[9px] text-amber-100">
+                              Pilot
+                            </Badge>
+                            {row.paper ? (
+                              <Badge variant="outline" className="text-[9px]">
+                                paper
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-[9px]">
+                                live
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <div className="font-mono text-xs text-muted-foreground">
+                          qty {fmtQty(row.qty)} · medie {fmtPrice(row.avgEntry)}
+                          {row.markPrice != null ? ` · piață ${fmtPrice(row.markPrice)}` : ""}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </>
             )}
           </CardContent>
         </Card>
@@ -904,41 +1004,110 @@ export function LiveTradingPanel() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Bots (deschis)</CardTitle>
             <CardDescription>
-              Gestionat de motorul de strategie. Poți prelua poziția manuală pe aceeași pereche — botul se
-              activează și urmărește SL/TP și ieșirea din strategie.
+              Toți boții cu poziție deschisă, grupați: strategii tale vs strategii create de AI Pilot
+              (`source: pilot`).
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
-            {!bots.length ? (
-              <p className="text-xs text-muted-foreground">Niciun bot cu poziție deschisă.</p>
-            ) : (
-              bots.map((row) => (
-                <button
-                  key={row.botId}
-                  type="button"
-                  onClick={() => {
-                    setSelected(row);
-                    setKind("bot");
-                  }}
-                  className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                    selected?.botId === row.botId && kind === "bot"
-                      ? "border-primary bg-primary/10"
-                      : "border-border hover:bg-muted/50"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{row.pair}</span>
-                    <Badge variant="outline" className="text-[10px]">
-                      {row.botStatus}
-                    </Badge>
-                  </div>
-                  <div className="text-xs text-muted-foreground">{row.strategyName}</div>
-                  <div className="font-mono text-xs text-muted-foreground">
-                    qty {fmtQty(row.qty)} · intrare {fmtPrice(row.avgEntry)}
-                  </div>
-                </button>
-              ))
-            )}
+          <CardContent className="space-y-3">
+            <div className="max-h-[min(55vh,420px)] space-y-3 overflow-y-auto pr-1">
+              {!bots.length ? (
+                <p className="text-xs text-muted-foreground">Niciun bot cu poziție deschisă.</p>
+              ) : (
+                <>
+                  {botsByOrigin.user.length > 0 ? (
+                    <div className="space-y-1.5">
+                      <p className="sticky top-0 z-[1] bg-card/95 px-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur-sm">
+                        Tu · boți
+                      </p>
+                      {botsByOrigin.user.map((row) => (
+                        <button
+                          key={row.botId}
+                          type="button"
+                          onClick={() => {
+                            setSelected(row);
+                            setKind("bot");
+                          }}
+                          className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                            selected?.botId === row.botId && kind === "bot"
+                              ? "border-primary bg-primary/10"
+                              : "border-border hover:bg-muted/50"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-medium">{row.pair}</span>
+                            <div className="flex flex-wrap items-center gap-1">
+                              <Badge variant="outline" className="text-[10px]">
+                                {row.botStatus}
+                              </Badge>
+                              {row.botMode === "paper" ? (
+                                <Badge variant="outline" className="text-[9px]">
+                                  paper
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-[9px]">
+                                  live
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-xs text-muted-foreground">{row.strategyName}</div>
+                          <div className="font-mono text-xs text-muted-foreground">
+                            qty {fmtQty(row.qty)} · intrare {fmtPrice(row.avgEntry)}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {botsByOrigin.pilot.length > 0 ? (
+                    <div className="space-y-1.5">
+                      <p className="sticky top-0 z-[1] bg-card/95 px-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200/90 backdrop-blur-sm">
+                        AI Pilot · boți
+                      </p>
+                      {botsByOrigin.pilot.map((row) => (
+                        <button
+                          key={row.botId}
+                          type="button"
+                          onClick={() => {
+                            setSelected(row);
+                            setKind("bot");
+                          }}
+                          className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                            selected?.botId === row.botId && kind === "bot"
+                              ? "border-primary bg-primary/10"
+                              : "border-amber-500/25 hover:bg-amber-500/[0.06]"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-medium">{row.pair}</span>
+                            <div className="flex flex-wrap items-center gap-1">
+                              <Badge variant="outline" className="border-amber-500/40 text-[9px] text-amber-100">
+                                Pilot
+                              </Badge>
+                              <Badge variant="outline" className="text-[10px]">
+                                {row.botStatus}
+                              </Badge>
+                              {row.botMode === "paper" ? (
+                                <Badge variant="outline" className="text-[9px]">
+                                  paper
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-[9px]">
+                                  live
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-xs text-muted-foreground">{row.strategyName}</div>
+                          <div className="font-mono text-xs text-muted-foreground">
+                            qty {fmtQty(row.qty)} · intrare {fmtPrice(row.avgEntry)}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
 
             {manual.length > 0 && adoptCandidates.length === 0 && (
               <div className="space-y-1 border-t border-border pt-3">
@@ -1342,6 +1511,23 @@ export function LiveTradingPanel() {
                   <span>
                     <span className="text-muted-foreground">Intrare medie:</span> {fmtPrice(selected.avgEntry)}
                   </span>
+                  <span>
+                    <span className="text-muted-foreground">USDC investit (la cost):</span>{" "}
+                    {investedUsdcAtCost != null ? (
+                      <span className="tabular-nums text-foreground">
+                        {investedUsdcAtCost.toLocaleString("ro-RO", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        USDC
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </span>
+                  <p className="text-[10px] leading-snug text-muted-foreground">
+                    Cantitate × intrare medie (fără comisioane).
+                  </p>
                   <span>
                     <span className="text-muted-foreground">Preț piață:</span>{" "}
                     {fmtPrice(wsTickerPrice != null && Number.isFinite(wsTickerPrice) ? wsTickerPrice : selected.markPrice)}

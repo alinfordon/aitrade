@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { DEFAULT_SPOT_PAIR } from "@/lib/market-defaults";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { cn } from "@/lib/utils";
-import { Loader2, Sparkles, Wand2 } from "lucide-react";
+import { Loader2, Sparkles, Trash2, Wand2 } from "lucide-react";
 
 /** Nu e ObjectId — păstrează ciorna la refresh fără să reselecteze primul salvat */
 const DRAFT_SEL = "__draft__";
@@ -78,6 +78,7 @@ export default function StrategiesPage() {
   const [aiIdeaPreset, setAiIdeaPreset] = useState("");
   const [aiRisk, setAiRisk] = useState("balanced");
   const [aiLoading, setAiLoading] = useState(false);
+  const [deletePilotLoading, setDeletePilotLoading] = useState(false);
 
   const refresh = useCallback(async (opts = {}) => {
     const s = await fetch("/api/strategies").then((r) => r.json());
@@ -250,6 +251,73 @@ export default function StrategiesPage() {
     else await runGenerateAuto(true);
   }
 
+  const pilotCount = strategies.filter((s) => s.source === "pilot").length;
+
+  async function deleteStrategyRow(strategy, e) {
+    e.stopPropagation();
+    if (
+      !window.confirm(
+        `Ștergi definitiv strategia „${strategy.name}”? Nu poate fi folosită de niciun bot.`
+      )
+    ) {
+      return;
+    }
+    try {
+      const r = await fetch(`/api/strategies/${strategy._id}`, { method: "DELETE" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        toast.error(typeof j.error === "string" ? j.error : "Ștergere eșuată");
+        return;
+      }
+      toast.success("Strategie ștearsă.");
+      if (String(selectedId) === String(strategy._id)) {
+        setSelectedId(DRAFT_SEL);
+      }
+      await refresh();
+    } catch {
+      toast.error("Eroare rețea");
+    }
+  }
+
+  async function deleteAllPilotStrategies() {
+    if (pilotCount === 0) {
+      toast.info("Nu ai strategii salvate de la pilot.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Ștergi toate cele ${pilotCount} strategii cu sursa „pilot”? Cele folosite de boți rămân până oprești sau ștergi botii.`
+      )
+    ) {
+      return;
+    }
+    setDeletePilotLoading(true);
+    try {
+      const r = await fetch("/api/strategies/pilot", { method: "DELETE" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        toast.error(typeof j.error === "string" ? j.error : "Ștergere eșuată");
+        return;
+      }
+      const deleted = typeof j.deletedCount === "number" ? j.deletedCount : 0;
+      const skipped = typeof j.skippedInUse === "number" ? j.skippedInUse : 0;
+      if (deleted === 0 && skipped > 0) {
+        toast.warning(j.message || "Nicio strategie ștearsă — toate sunt legate de boti.");
+      } else {
+        toast.success(
+          skipped > 0
+            ? `Șterse ${deleted} strategii pilot; ${skipped} sărite (folosite de boti).`
+            : `Șterse ${deleted} strategii pilot.`
+        );
+      }
+      await refresh();
+    } catch {
+      toast.error("Eroare rețea");
+    } finally {
+      setDeletePilotLoading(false);
+    }
+  }
+
   async function runAiFromPrompt() {
     const goal = aiGoal.trim();
     if (goal.length < 8) {
@@ -300,21 +368,48 @@ export default function StrategiesPage() {
             <Button type="button" variant="outline" className="w-full border-primary/30" onClick={startNewDraft}>
               + Ciornă nouă
             </Button>
-            {strategies.map((s) => (
-              <button
-                key={s._id}
+            {pilotCount > 0 && (
+              <Button
                 type="button"
-                className={cn(
-                  "block w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                  selectedId === String(s._id)
-                    ? "border-primary/50 bg-primary/10 text-foreground"
-                    : "border-border hover:bg-muted"
-                )}
-                onClick={() => setSelectedId(String(s._id))}
+                variant="outline"
+                className="flex w-full items-center justify-center gap-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={deletePilotLoading}
+                onClick={() => void deleteAllPilotStrategies()}
               >
-                {s.name}{" "}
-                <span className="text-xs text-muted-foreground">({s.source})</span>
-              </button>
+                {deletePilotLoading ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : null}
+                <span className="text-center leading-tight">
+                  Șterge toate strategiile pilot ({pilotCount})
+                </span>
+              </Button>
+            )}
+            {strategies.map((s) => (
+              <div key={s._id} className="flex gap-1">
+                <button
+                  type="button"
+                  className={cn(
+                    "min-w-0 flex-1 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                    selectedId === String(s._id)
+                      ? "border-primary/50 bg-primary/10 text-foreground"
+                      : "border-border hover:bg-muted"
+                  )}
+                  onClick={() => setSelectedId(String(s._id))}
+                >
+                  <span className="block truncate">
+                    {s.name}{" "}
+                    <span className="text-xs text-muted-foreground">({s.source})</span>
+                  </span>
+                </button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                  title={`Șterge „${s.name}”`}
+                  onClick={(e) => void deleteStrategyRow(s, e)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             ))}
             <div className="pt-4">
               <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Exemple</p>

@@ -20,7 +20,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import { BotsTradesColumn } from "@/components/BotsTradesColumn";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
 import { cn } from "@/lib/utils";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Trash } from "lucide-react";
 
 function botOpenPositionInfo(b) {
   if (b.mode === "paper" && b.paperState?.open) {
@@ -65,6 +65,7 @@ export default function BotsPage() {
 
   const [stopTarget, setStopTarget] = useState(null);
   const [stopLoading, setStopLoading] = useState(false);
+  const [deleteAllInactiveLoading, setDeleteAllInactiveLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     const [b, s] = await Promise.all([
@@ -136,6 +137,38 @@ export default function BotsPage() {
       toast.error("Eroare rețea");
     } finally {
       setEditSaving(false);
+    }
+  }
+
+  async function deleteAllInactiveBots() {
+    const n = bots.filter((b) => b.status !== "active").length;
+    if (n === 0) {
+      toast.info("Nu există boți opriți sau în pauză de șters.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Ștergi definitiv ${n} bot(uri) care nu sunt activi (oprit / pauză)? Boții cu status „active” nu sunt modificați.`
+      )
+    ) {
+      return;
+    }
+    setDeleteAllInactiveLoading(true);
+    try {
+      const r = await fetch("/api/bots/delete-inactive", { method: "POST" });
+      const j = await r.json();
+      if (!r.ok) {
+        toast.error(typeof j.error === "string" ? j.error : "Ștergere eșuată");
+        return;
+      }
+      const deleted = typeof j.deletedCount === "number" ? j.deletedCount : 0;
+      toast.success(`Șterși ${deleted} bot(uri).`);
+      await refresh();
+      void loadWallet({ silent: true });
+    } catch {
+      toast.error("Eroare rețea");
+    } finally {
+      setDeleteAllInactiveLoading(false);
     }
   }
 
@@ -284,6 +317,27 @@ export default function BotsPage() {
           </form>
         </CardContent>
       </Card>
+
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-muted-foreground">
+          {bots.length > 0
+            ? `${bots.filter((b) => b.status === "active").length} activi · ${bots.filter((b) => b.status !== "active").length} opriți / pauză`
+            : "Niciun bot încă."}
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={
+            deleteAllInactiveLoading || bots.filter((b) => b.status !== "active").length === 0
+          }
+          className="shrink-0 border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+          onClick={() => void deleteAllInactiveBots()}
+        >
+          <Trash className="mr-2 h-3.5 w-3.5" />
+          {deleteAllInactiveLoading ? "Se șterge…" : "Șterge toți boții opriți"}
+        </Button>
+      </div>
 
       <div className="space-y-3">
         {bots.map((b) => {

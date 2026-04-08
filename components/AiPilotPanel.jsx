@@ -20,6 +20,7 @@ export function AiPilotPanel() {
   const [pilotCreateBot, setPilotCreateBot] = useState(false);
   const [pilotMaxTradesRun, setPilotMaxTradesRun] = useState(3);
   const [pilotMaxManualOpen, setPilotMaxManualOpen] = useState(3);
+  const [pilotMaxPilotBots, setPilotMaxPilotBots] = useState(5);
   const [pilotSelected, setPilotSelected] = useState(() => new Set());
   const [pilotLastSummary, setPilotLastSummary] = useState("");
   const [pilotLastError, setPilotLastError] = useState("");
@@ -43,6 +44,7 @@ export function AiPilotPanel() {
       setPilotCreateBot(Boolean(s.createBotFromAnalysis));
       setPilotMaxTradesRun(Math.min(20, Math.max(1, Number(s.maxTradesPerRun) || 3)));
       setPilotMaxManualOpen(Math.min(20, Math.max(1, Number(s.maxOpenManualPositions) || 3)));
+      setPilotMaxPilotBots(Math.min(20, Math.max(1, Number(s.maxPilotBots) || 5)));
       setPilotLastSummary(String(s.lastSummary || ""));
       setPilotLastError(String(s.lastError || ""));
       setPilotLastRun(s.lastRunAt || null);
@@ -72,6 +74,10 @@ export function AiPilotPanel() {
     e.preventDefault();
     setPilotSaving(true);
     try {
+      const botIdOk = new Set(pilotBots.map((b) => String(b.id)));
+      const botIdsPayload = [...new Set(Array.from(pilotSelected).map(String))].filter((id) =>
+        botIdOk.has(id)
+      );
       const r = await fetch("/api/user/ai-pilot", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -84,13 +90,17 @@ export function AiPilotPanel() {
           createBotFromAnalysis: pilotCreateBot,
           maxTradesPerRun: pilotMaxTradesRun,
           maxOpenManualPositions: pilotMaxManualOpen,
-          botIds: Array.from(pilotSelected),
+          maxPilotBots: pilotMaxPilotBots,
+          botIds: botIdsPayload,
         }),
       });
       const j = await r.json();
       if (!r.ok) {
         toast.error(typeof j.error === "string" ? j.error : "Salvare eșuată");
         return;
+      }
+      if (j.prunedStaleBotIds) {
+        toast.info("Unele boți selectați nu mai existau — lista pilot a fost curățată.");
       }
       toast.success("Setări AI Pilot salvate");
       await loadPilot();
@@ -158,6 +168,22 @@ export function AiPilotPanel() {
               />
               Creare strategie + bot nou din analiză (pereche fără bot existent)
             </label>
+            <div className="space-y-2">
+              <Label>Max boți creați de pilot</Label>
+              <Input
+                type="number"
+                min={1}
+                max={20}
+                value={pilotMaxPilotBots}
+                onChange={(e) => setPilotMaxPilotBots(Number(e.target.value))}
+              />
+              <p className="text-xs text-muted-foreground">
+                La depășire, înainte de un bot nou se elimină automat (doar fără poziție deschisă pe bot)
+                cei considerați mai puțin relevanți: pereche în afara topului din rundă, apoi bot oprit/pauză,
+                apoi mai vechi. Boții cu poziție activă nu sunt șterși; plafonul total de boți al planului
+                rămâne separat.
+              </p>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Max acțiuni / rundă</Label>
@@ -201,7 +227,7 @@ export function AiPilotPanel() {
               <Label>Max USDC per ordin buy</Label>
               <Input
                 type="number"
-                min={10}
+                min={2}
                 step={1}
                 value={pilotMaxUsdc}
                 onChange={(e) => setPilotMaxUsdc(Number(e.target.value))}

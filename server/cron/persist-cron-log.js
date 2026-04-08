@@ -1,6 +1,19 @@
 import { connectDB } from "@/models/db";
 import CronRunLog from "@/models/CronRunLog";
 
+/** Număr maxim de înregistrări păstrate în Mongo; restul se șterg după fiecare inserare nouă. */
+export const MAX_CRON_RUN_LOGS = 50;
+
+async function trimCronRunLogsToMax(max = MAX_CRON_RUN_LOGS) {
+  const toRemove = await CronRunLog.find()
+    .sort({ createdAt: -1 })
+    .skip(max)
+    .select("_id")
+    .lean();
+  if (!toRemove.length) return;
+  await CronRunLog.deleteMany({ _id: { $in: toRemove.map((x) => x._id) } });
+}
+
 /**
  * Păstrează un rezumat compact (evită documente uriașe în Mongo).
  * @param {{ job: string, ok: boolean, statusCode?: number, durationMs?: number, error?: string, body?: unknown }} args
@@ -18,6 +31,7 @@ export async function persistCronRun(args) {
       error: error ? String(error).slice(0, 4000) : "",
       summary,
     });
+    await trimCronRunLogsToMax(MAX_CRON_RUN_LOGS);
   } catch (e) {
     console.error("[persistCronRun]", job, e);
   }

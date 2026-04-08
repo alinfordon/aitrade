@@ -7,7 +7,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { respondIfMongoMissing } from "@/lib/mongo-env";
 import Bot from "@/models/Bot";
 import { buildSuggestedPairs, paperBalancesList } from "@/lib/wallet/suggest-pairs";
-import { paperUsdcOverview, realUsdcOverview } from "@/lib/wallet/usdc-overview";
+import { estimateSpotTotalUsd, paperUsdcOverview, realUsdcOverview } from "@/lib/wallet/usdc-overview";
 import { DEFAULT_QUOTE_ASSET, getManualPaperQuoteBalance } from "@/lib/market-defaults";
 import { mapBinanceUserMessageAsync } from "@/lib/binance/map-exchange-error";
 
@@ -110,9 +110,18 @@ export async function GET() {
   let overviewReal = null;
   if (real.connected && Array.isArray(real.balances)) {
     try {
-      overviewReal = await realUsdcOverview(real.balances);
+      const [base, totalUsdEstimate] = await Promise.all([
+        realUsdcOverview(real.balances),
+        estimateSpotTotalUsd(real.balances),
+      ]);
+      overviewReal = { ...base, totalUsdEstimate };
     } catch {
-      overviewReal = { usdcFree: 0, inAssetsUsdcEstimate: 0, error: "estimate_failed" };
+      overviewReal = {
+        usdcFree: 0,
+        inAssetsUsdcEstimate: 0,
+        totalUsdEstimate: null,
+        error: "estimate_failed",
+      };
     }
   }
 

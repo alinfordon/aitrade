@@ -36,6 +36,15 @@ export async function GET(request) {
     return NextResponse.json({ error: "to trebuie să fie după from." }, { status: 400 });
   }
 
+  const isPaperRaw = searchParams.get("isPaper");
+  /** @type {Record<string, unknown>} */
+  const modeMatch = {};
+  if (isPaperRaw === "1" || isPaperRaw === "true") {
+    modeMatch.isPaper = true;
+  } else if (isPaperRaw === "0" || isPaperRaw === "false") {
+    modeMatch.$or = [{ isPaper: false }, { isPaper: { $exists: false } }];
+  }
+
   await connectDB();
   const oid = new mongoose.Types.ObjectId(session.userId);
 
@@ -45,6 +54,7 @@ export async function GET(request) {
         userId: oid,
         botId: { $exists: true, $ne: null },
         createdAt: { $gte: dFrom, $lt: dTo },
+        ...modeMatch,
       },
     },
     {

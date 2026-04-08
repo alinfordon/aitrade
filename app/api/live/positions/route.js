@@ -1,11 +1,14 @@
+import mongoose from "mongoose";
 import { NextResponse } from "next/server";
 import { connectDB } from "@/models/db";
 import User from "@/models/User";
 import Bot from "@/models/Bot";
+import Trade from "@/models/Trade";
 import "@/models/Strategy";
 import { requireAuth } from "@/lib/api-helpers";
 import { respondIfMongoMissing } from "@/lib/mongo-env";
 import { getPrice } from "@/lib/binance/service";
+import { normSpotPair } from "@/lib/market-defaults";
 import { summarizeStrategyDefinition } from "@/lib/strategy-human-summary";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +58,35 @@ export async function GET() {
       takeProfit: p.takeProfit != null ? Number(p.takeProfit) : null,
       source: "manual",
       paper: raw?.paper === true,
+      origin: "user",
     });
+  }
+
+  const pairsNorm = [...new Set(manual.map((m) => normSpotPair(m.pair)))];
+  if (pairsNorm.length > 0) {
+    const uid = new mongoose.Types.ObjectId(String(session.userId));
+    const latestByPair = await Trade.aggregate([
+      {
+        $match: {
+          userId: uid,
+          tradeSource: "manual",
+          side: "buy",
+          status: { $in: ["filled", "simulated"] },
+          pair: { $in: pairsNorm },
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: "$pair", meta: { $first: "$meta" } } },
+    ]);
+    const pilotPairSet = new Set();
+    for (const row of latestByPair) {
+      if (row.meta && typeof row.meta === "object" && row.meta.aiPilotControl) {
+        pilotPairSet.add(normSpotPair(row._id));
+      }
+    }
+    for (const m of manual) {
+      m.origin = pilotPairSet.has(normSpotPair(m.pair)) ? "pilot" : "user";
+    }
   }
 
   const botDocs = await Bot.find({
@@ -109,6 +140,7 @@ export async function GET() {
       strategyName: strat?.name || "—",
       strategySource: strat?.source ?? null,
       strategySafeMode: Boolean(strat?.safeMode),
+      origin: strat?.source === "pilot" ? "pilot" : "user",
       strategySummary,
       botMode: b.mode,
       futuresEnabled: Boolean(b.futuresEnabled),

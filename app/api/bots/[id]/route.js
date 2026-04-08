@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/models/db";
 import { Bot, Strategy } from "@/models";
 import { requireAuth } from "@/lib/api-helpers";
+import { removeBotsFromAiPilot } from "@/server/bots/remove-bots-from-ai-pilot";
 import { z } from "zod";
 
 const patchSchema = z.object({
@@ -72,5 +73,6 @@ export async function DELETE(_, { params }) {
   if (!r.deletedCount) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  await removeBotsFromAiPilot(session.userId, params.id);
   return NextResponse.json({ ok: true });
 }

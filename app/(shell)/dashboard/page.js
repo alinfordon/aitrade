@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   Bot,
   Cpu,
+  DollarSign,
   Percent,
   Radio,
   Sparkles,
@@ -21,6 +22,7 @@ import { toast } from "sonner";
 import { maxBotsForPlan } from "@/lib/plans";
 import { BinanceConnectionBadge } from "@/components/BinanceConnectionBadge";
 import { RealSpotBalancesTable } from "@/components/RealSpotBalancesTable";
+import { UsdcEquityCharts } from "@/components/dashboard/UsdcEquityCharts";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
 import { cn } from "@/lib/utils";
 
@@ -174,6 +176,78 @@ export default function DashboardPage() {
         </div>
       </header>
 
+      <section className="relative mt-8">
+        <Card className="overflow-hidden border-white/[0.08] bg-gradient-to-br from-card/80 via-card/50 to-card/30 shadow-xl shadow-black/20 backdrop-blur-xl">
+          <CardHeader className="flex flex-col gap-4 border-b border-white/[0.06] bg-white/[0.02] pb-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Wallet className="h-4 w-4 text-primary" strokeWidth={1.75} />
+                <CardTitle className="font-display text-lg sm:text-xl">Binance Spot — sold live</CardTitle>
+              </div>
+              <CardDescription className="text-xs sm:text-sm">
+                Conectat = citire sold cu cheile tale. Detalii și editare în Settings.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <BinanceConnectionBadge wallet={wallet} />
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="border border-white/10 bg-white/5"
+                onClick={() => loadWallet().catch(() => {})}
+              >
+                Reîmprospătează
+              </Button>
+              {!wallet?.hasApiKeys && (
+                <Button type="button" size="sm" variant="outline" className="border-primary/30" asChild>
+                  <Link href="/settings">Chei API</Link>
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            {wallet?.real?.connected &&
+            wallet?.overview?.real &&
+            typeof wallet.overview.real.totalUsdEstimate === "number" ? (
+              <div className="mb-6 overflow-hidden rounded-2xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.12] via-card/40 to-sky-500/[0.06] p-4 shadow-lg shadow-black/20 sm:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-center gap-2 text-emerald-400/95">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05]">
+                      <DollarSign className="h-5 w-5" strokeWidth={1.75} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                        Sold total estimat
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">Binance Spot · în USD (≈ USDC)</p>
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-4 font-mono text-3xl font-semibold tabular-nums tracking-tight text-foreground sm:text-4xl">
+                  {wallet.overview.real.totalUsdEstimate.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  <span className="text-xl font-medium text-muted-foreground sm:text-2xl">USD</span>
+                </p>
+                <p className="mt-3 max-w-xl text-[11px] leading-relaxed text-muted-foreground">
+                  Sumă <span className="text-foreground/90">total</span> (disponibil + blocat în ordine) pentru
+                  fiecare activ, evaluată la preț spot USDC. Stabile majore (USDC, USDT, FDUSD…) sunt luate ca
+                  1:1 cu USD.
+                </p>
+              </div>
+            ) : wallet?.hasApiKeys && !wallet?.real?.connected ? (
+              <div className="mb-6 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-[11px] text-muted-foreground">
+                Conectează cheile Binance și apasă Reîmprospătează pentru sold total în USD.
+              </div>
+            ) : null}
+            {wallet?.real?.error ? <p className="mb-4 text-sm text-destructive">{wallet.real.error}</p> : null}
+            <RealSpotBalancesTable wallet={wallet} />
+          </CardContent>
+        </Card>
+      </section>
+
       <section className="relative mt-10 grid gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
           icon={TrendingUp}
@@ -220,42 +294,17 @@ export default function DashboardPage() {
         </StatTile>
       </section>
 
-      <section className="relative mt-8">
-        <Card className="overflow-hidden border-white/[0.08] bg-gradient-to-br from-card/80 via-card/50 to-card/30 shadow-xl shadow-black/20 backdrop-blur-xl">
-          <CardHeader className="flex flex-col gap-4 border-b border-white/[0.06] bg-white/[0.02] pb-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <Wallet className="h-4 w-4 text-primary" strokeWidth={1.75} />
-                <CardTitle className="font-display text-lg sm:text-xl">Binance Spot — sold live</CardTitle>
-              </div>
-              <CardDescription className="text-xs sm:text-sm">
-                Conectat = citire sold cu cheile tale. Detalii și editare în Settings.
-              </CardDescription>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <BinanceConnectionBadge wallet={wallet} />
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="border border-white/10 bg-white/5"
-                onClick={() => loadWallet().catch(() => {})}
-              >
-                Reîmprospătează
-              </Button>
-              {!wallet?.hasApiKeys && (
-                <Button type="button" size="sm" variant="outline" className="border-primary/30" asChild>
-                  <Link href="/settings">Chei API</Link>
-                </Button>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="pt-6">
-            {wallet?.real?.error ? <p className="mb-4 text-sm text-destructive">{wallet.real.error}</p> : null}
-            <RealSpotBalancesTable wallet={wallet} />
-          </CardContent>
-        </Card>
-      </section>
+      <section className="relative mt-10 space-y-3">
+        <div className="flex items-center gap-2">
+          <Activity className="h-4 w-4 text-primary" />
+          <h2 className="font-display text-lg font-semibold tracking-tight">Evoluție USDC (live)</h2>
+        </div>
+        <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
+          Grafice cumulative din PnL-ul tranzacțiilor reale (nu paper) — reflectă creșterea sau scăderea
+          rezultatului realizat în timp, nu soldul brut din cont Binance.
+        </p>
+        <UsdcEquityCharts />
+      </section>      
 
       <section className="relative mt-8">
         <div className="mb-4 flex items-center gap-2">

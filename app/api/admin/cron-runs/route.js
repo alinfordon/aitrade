@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/models/db";
 import CronRunLog from "@/models/CronRunLog";
 import { requireAdmin } from "@/lib/api-helpers";
+import { MAX_CRON_RUN_LOGS } from "@/server/cron/persist-cron-log";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,10 @@ export async function GET(request) {
   if (error) return error;
 
   const { searchParams } = new URL(request.url);
-  const limit = Math.min(Math.max(Number(searchParams.get("limit") || 15), 1), 50);
+  const limit = Math.min(
+    Math.max(Number(searchParams.get("limit") || MAX_CRON_RUN_LOGS), 1),
+    MAX_CRON_RUN_LOGS
+  );
 
   await connectDB();
   const logs = await CronRunLog.find()
@@ -29,5 +33,16 @@ export async function GET(request) {
       summary: l.summary ?? {},
       createdAt: l.createdAt,
     })),
+    maxRetained: MAX_CRON_RUN_LOGS,
   });
+}
+
+/** Șterge toate logurile cron (admin). */
+export async function DELETE() {
+  const { error } = await requireAdmin();
+  if (error) return error;
+
+  await connectDB();
+  const r = await CronRunLog.deleteMany({});
+  return NextResponse.json({ ok: true, deletedCount: r.deletedCount ?? 0 });
 }

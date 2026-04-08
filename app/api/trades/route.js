@@ -18,6 +18,7 @@ export async function GET(request) {
     searchParams.get("aiPilotControl") === "1" || searchParams.get("aiPilot") === "1";
   /** Toate tranzacțiile cu botId setat (motor cron + manual pilot legat de bot). */
   const anyBot = searchParams.get("anyBot") === "1";
+  const isPaperRaw = searchParams.get("isPaper");
 
   await connectDB();
   const filter = { userId: session.userId };
@@ -26,6 +27,11 @@ export async function GET(request) {
   }
   if (aiPilotControl) {
     filter["meta.aiPilotControl"] = true;
+  }
+  if (isPaperRaw === "1" || isPaperRaw === "true") {
+    filter.isPaper = true;
+  } else if (isPaperRaw === "0" || isPaperRaw === "false") {
+    filter.$or = [{ isPaper: false }, { isPaper: { $exists: false } }];
   }
   if (pairRaw && String(pairRaw).trim()) {
     filter.pair = normSpotPair(pairRaw);

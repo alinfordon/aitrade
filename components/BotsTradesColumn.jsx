@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
 import { Bot } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 const POLL_MS = 15_000;
 /** Max rânduri în tabel; API sortează descendent după dată → mereu cele mai noi primele. */
@@ -31,6 +32,8 @@ export function BotsTradesColumn() {
   const [daySummary, setDaySummary] = useState(null);
   const [dayLabel, setDayLabel] = useState("");
   const [loading, setLoading] = useState(true);
+  /** real = doar tranzacții live; paper = simulate / paper */
+  const [modeTab, setModeTab] = useState("real");
 
   const load = useCallback(async () => {
     const { start, end } = localDayBounds();
@@ -44,9 +47,10 @@ export function BotsTradesColumn() {
     );
 
     try {
-      const qs = `from=${encodeURIComponent(start.toISOString())}&to=${encodeURIComponent(end.toISOString())}`;
+      const paperParam = modeTab === "paper" ? "1" : "0";
+      const qs = `from=${encodeURIComponent(start.toISOString())}&to=${encodeURIComponent(end.toISOString())}&isPaper=${paperParam}`;
       const [r, rStats] = await Promise.all([
-        fetch(`/api/trades?anyBot=1&limit=${TRADES_LIMIT}`),
+        fetch(`/api/trades?anyBot=1&limit=${TRADES_LIMIT}&isPaper=${paperParam}`),
         fetch(`/api/trades/bot-daily-stats?${qs}`),
         loadWallet({ silent: true }),
       ]);
@@ -73,9 +77,10 @@ export function BotsTradesColumn() {
     } finally {
       setLoading(false);
     }
-  }, [loadWallet]);
+  }, [loadWallet, modeTab]);
 
   useEffect(() => {
+    setLoading(true);
     void load();
     const id = setInterval(() => void load(), POLL_MS);
     return () => clearInterval(id);
@@ -93,6 +98,40 @@ export function BotsTradesColumn() {
             <CardDescription className="text-xs leading-relaxed">
               Ordine de la motorul de strategie (cron) și cele legate de un anumit bot (inclusiv manual pilot).
             </CardDescription>
+            <div
+              className="mt-3 flex max-w-xs rounded-lg border border-border/80 bg-muted/30 p-0.5"
+              role="tablist"
+              aria-label="Mod tranzacții boți"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={modeTab === "real"}
+                className={cn(
+                  "flex-1 rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors",
+                  modeTab === "real"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setModeTab("real")}
+              >
+                Real (live)
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={modeTab === "paper"}
+                className={cn(
+                  "flex-1 rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors",
+                  modeTab === "paper"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setModeTab("paper")}
+              >
+                Paper
+              </button>
+            </div>
           </div>
           <Button type="button" size="sm" variant="secondary" className="shrink-0 text-xs" onClick={() => void load()}>
             Reîmprospătează
@@ -183,7 +222,7 @@ export function BotsTradesColumn() {
             </p>
             <p className="mt-0.5 text-xs capitalize leading-snug text-foreground/90">{dayLabel}</p>
             <p className="mt-1 text-[10px] text-muted-foreground">
-              Suma PnL din tranzacțiile cu botId în intervalul local 00:00–24:00.
+              Suma PnL din tranzacțiile cu botId ({modeTab === "paper" ? "paper" : "live"}) în intervalul local 00:00–24:00.
             </p>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div className="rounded-lg border border-white/[0.06] bg-background/40 px-3 py-2">
@@ -222,8 +261,9 @@ export function BotsTradesColumn() {
           <p className="p-4 text-sm text-muted-foreground">Se încarcă…</p>
         ) : trades.length === 0 ? (
           <p className="p-4 text-sm text-muted-foreground">
-            Încă nu există tranzacții asociate boților. Pornește un bot și lasă cron-ul să ruleze, sau leagă tranzacții
-            manuale de un bot pe aceeași pereche.
+            {modeTab === "paper"
+              ? "Încă nu există tranzacții paper asociate boților pentru filtrul curent."
+              : "Încă nu există tranzacții live asociate boților. Pornește un bot în mod real și lasă cron-ul să ruleze sau leagă tranzacții manuale de un bot pe aceeași pereche."}
           </p>
         ) : (
           <div className="overflow-x-auto">
