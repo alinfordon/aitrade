@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { AiPilotRunSummary } from "@/components/AiPilotRunSummary";
 
 export function AiPilotPanel() {
   const [pilotCanUse, setPilotCanUse] = useState(false);
@@ -306,49 +307,17 @@ export function AiPilotPanel() {
             </Button>
           </form>
         )}
-        {!pilotLoading &&
-          pilotCanUse &&
-          (pilotLastRun ||
-            pilotLastSummary ||
-            pilotLastError ||
-            pilotLastManualLiveRun ||
-            pilotLastManualLiveSummary ||
-            pilotLastManualLiveError) && (
-            <div className="max-w-lg space-y-2 rounded-md border border-border/60 bg-muted/30 p-3 text-xs">
-              {pilotLastRun && (
-                <p>
-                  <span className="font-medium">Ultima rundă pilot:</span>{" "}
-                  {new Date(pilotLastRun).toLocaleString("ro-RO")}
-                </p>
-              )}
-              {pilotLastSummary && (
-                <p>
-                  <span className="font-medium">Rezumat pilot:</span> {pilotLastSummary}
-                </p>
-              )}
-              {pilotLastError && (
-                <p className="text-destructive">
-                  <span className="font-medium">Eroare pilot:</span> {pilotLastError}
-                </p>
-              )}
-              {pilotLastManualLiveRun && (
-                <p>
-                  <span className="font-medium">Ultima verificare Live manual:</span>{" "}
-                  {new Date(pilotLastManualLiveRun).toLocaleString("ro-RO")}
-                </p>
-              )}
-              {pilotLastManualLiveSummary && (
-                <p>
-                  <span className="font-medium">Rezumat Live manual:</span> {pilotLastManualLiveSummary}
-                </p>
-              )}
-              {pilotLastManualLiveError && (
-                <p className="text-destructive">
-                  <span className="font-medium">Eroare Live manual:</span> {pilotLastManualLiveError}
-                </p>
-              )}
-            </div>
-          )}
+        {!pilotLoading && pilotCanUse && (
+          <AiPilotRunSummary
+            pilotLastRun={pilotLastRun}
+            pilotLastSummary={pilotLastSummary}
+            pilotLastError={pilotLastError}
+            pilotLastManualLiveRun={pilotLastManualLiveRun}
+            pilotLastManualLiveSummary={pilotLastManualLiveSummary}
+            pilotLastManualLiveError={pilotLastManualLiveError}
+            className="max-w-lg space-y-2 rounded-md border border-border/60 bg-muted/30 p-3 text-xs"
+          />
+        )}
       </CardContent>
     </Card>
   );

@@ -9,6 +9,11 @@ import { useSpotWallet } from "@/components/SpotWalletProvider";
 import { Bot, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  ensureLivePositionsPolling,
+  refreshLivePositionsFromServer,
+  useLivePositions,
+} from "@/lib/client/live-positions-store";
 
 const POLL_MS = 15_000;
 const SELLS_LIMIT = 150;
@@ -30,7 +35,12 @@ function liveHrefForBot(botId) {
   return `/live?bot=${encodeURIComponent(String(botId))}`;
 }
 
-export function BotsTradesColumn() {
+/**
+ * @param {{ className?: string; variant?: "default" | "dashboard" }} [props]
+ */
+export function BotsTradesColumn({ className, variant = "default" } = {}) {
+  const isDashboard = variant === "dashboard";
+  const live = useLivePositions();
   const { wallet, loadWallet } = useSpotWallet();
   const [activeBots, setActiveBots] = useState([]);
   const [closedToday, setClosedToday] = useState([]);
@@ -41,6 +51,7 @@ export function BotsTradesColumn() {
   const [modeTab, setModeTab] = useState("real");
 
   const load = useCallback(async () => {
+    if (isDashboard) return;
     const { start, end } = localDayBounds();
     setDayLabel(
       start.toLocaleDateString("ro-RO", {
@@ -54,20 +65,11 @@ export function BotsTradesColumn() {
     try {
       const paperParam = modeTab === "paper" ? "1" : "0";
       const qs = `from=${encodeURIComponent(start.toISOString())}&to=${encodeURIComponent(end.toISOString())}&isPaper=${paperParam}`;
-      const [rPos, rTrades, rStats] = await Promise.all([
-        fetch("/api/live/positions"),
+      const [rTrades, rStats] = await Promise.all([
         fetch(`/api/trades?anyBot=1&limit=${SELLS_LIMIT}&side=sell&${qs}`),
         fetch(`/api/trades/bot-daily-stats?${qs}`),
       ]);
       void loadWallet({ silent: true });
-      const jPos = await rPos.json();
-      if (!rPos.ok) {
-        throw new Error(typeof jPos.error === "string" ? jPos.error : "Eroare poziții");
-      }
-      const botRows = Array.isArray(jPos.bots) ? jPos.bots : [];
-      const isPaperTab = modeTab === "paper";
-      const openBots = botRows.filter((b) => (b.botMode === "paper") === isPaperTab);
-      setActiveBots(openBots);
 
       const jTr = await rTrades.json();
       if (!rTrades.ok) {
@@ -95,70 +97,118 @@ export function BotsTradesColumn() {
     } finally {
       setLoading(false);
     }
-  }, [loadWallet, modeTab]);
+  }, [isDashboard, loadWallet, modeTab]);
 
   useEffect(() => {
+    ensureLivePositionsPolling();
+  }, []);
+
+  useEffect(() => {
+    if (isDashboard) {
+      const botRows = live.bots || [];
+      const openBots = botRows.filter((b) => b.botMode !== "paper");
+      setActiveBots(openBots);
+      setClosedToday([]);
+      setDaySummary(null);
+      setLoading(Boolean(live.loading) && botRows.length === 0);
+      return;
+    }
+    const botRows = live.bots || [];
+    const isPaperTab = modeTab === "paper";
+    setActiveBots(botRows.filter((b) => (b.botMode === "paper") === isPaperTab));
+  }, [isDashboard, live.bots, live.loading, live.version, modeTab]);
+
+  useEffect(() => {
+    if (isDashboard) return;
     setLoading(true);
     void load();
     const id = setInterval(() => void load(), POLL_MS);
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, isDashboard]);
 
   return (
-    <Card className="border-white/[0.08] bg-card/50 backdrop-blur-md lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:overflow-hidden">
+    <Card
+      className={cn(
+        "border-white/[0.08] bg-card/50 backdrop-blur-md",
+        isDashboard
+          ? "fleet-feed-card lg:static lg:max-h-none lg:overflow-visible"
+          : "lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:overflow-hidden",
+        className
+      )}
+    >
       <CardHeader className="border-b border-white/[0.06] pb-3">
         <div className="flex items-start justify-between gap-2">
-          <div className="space-y-1">
-            <CardTitle className="flex items-center gap-2 font-display text-base">
-              <Bot className="h-4 w-4 text-primary" strokeWidth={1.75} aria-hidden />
-              Tranzacții boți
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="flex flex-wrap items-center gap-2 font-display text-base">
+              <Bot className="h-4 w-4 shrink-0 text-primary" strokeWidth={1.75} aria-hidden />
+              {isDashboard ? "Boți · poziții live" : "Tranzacții boți"}
             </CardTitle>
             <CardDescription className="text-xs leading-relaxed">
-              Poziții deschise la boți (cu legătură în Live). Vânzările asociate unui bot din ziua curentă (ora locală
-              00:00–24:00), inclusiv închideri din cron sau manual legat de bot.
+              {isDashboard
+                ? "Doar poziții deschise la strategii (real). Rezumat sold și istoric pe pagina Boți."
+                : "Poziții deschise la boți (cu legătură în Live). Vânzările asociate unui bot din ziua curentă (ora locală 00:00–24:00), inclusiv închideri din cron sau manual legat de bot."}
             </CardDescription>
-            <div
-              className="mt-3 flex max-w-xs rounded-lg border border-border/80 bg-muted/30 p-0.5"
-              role="tablist"
-              aria-label="Mod tranzacții boți"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={modeTab === "real"}
-                className={cn(
-                  "flex-1 rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors",
-                  modeTab === "real"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                onClick={() => setModeTab("real")}
+            {!isDashboard ? (
+              <div
+                className="mt-3 flex max-w-xs rounded-lg border border-border/80 bg-muted/30 p-0.5"
+                role="tablist"
+                aria-label="Mod tranzacții boți"
               >
-                Real (live)
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={modeTab === "paper"}
-                className={cn(
-                  "flex-1 rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors",
-                  modeTab === "paper"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                onClick={() => setModeTab("paper")}
-              >
-                Paper
-              </button>
-            </div>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={modeTab === "real"}
+                  className={cn(
+                    "flex-1 rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors",
+                    modeTab === "real"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  onClick={() => setModeTab("real")}
+                >
+                  Real (live)
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={modeTab === "paper"}
+                  className={cn(
+                    "flex-1 rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors",
+                    modeTab === "paper"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  onClick={() => setModeTab("paper")}
+                >
+                  Paper
+                </button>
+              </div>
+            ) : null}
           </div>
-          <Button type="button" size="sm" variant="secondary" className="shrink-0 text-xs" onClick={() => void load()}>
-            Reîmprospătează
-          </Button>
+          <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+            {isDashboard ? (
+              <span className="fleet-mini-live" title="Flux date poziții">
+                <span className="fleet-mini-live-dot" aria-hidden />
+                Live
+              </span>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="text-xs"
+              onClick={() => {
+                void refreshLivePositionsFromServer();
+                if (!isDashboard) void load();
+              }}
+            >
+              Reîmprospătează
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="p-0 lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto">
-        {wallet?.overview?.paper ? (
+        {!isDashboard && wallet?.overview?.paper ? (
           <div className="border-b border-white/[0.08] bg-white/[0.02] p-4">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -195,7 +245,7 @@ export function BotsTradesColumn() {
           </div>
         ) : null}
 
-        {wallet?.overview?.real ? (
+        {!isDashboard && wallet?.overview?.real ? (
           <div className="border-b border-white/[0.08] bg-white/[0.02] p-4">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -227,14 +277,14 @@ export function BotsTradesColumn() {
               </div>
             </div>
           </div>
-        ) : wallet?.hasApiKeys && !wallet?.real?.connected ? (
+        ) : !isDashboard && wallet?.hasApiKeys && !wallet?.real?.connected ? (
           <div className="border-b border-white/[0.08] px-4 py-3 text-[11px] text-muted-foreground">
             Real: nu s-a putut citi soldul Binance
             {wallet?.real?.error ? ` — ${wallet.real.error}` : ""}.
           </div>
         ) : null}
 
-        {!loading && daySummary != null && (
+        {!isDashboard && !loading && daySummary != null && (
           <div className="border-b border-white/[0.08] bg-gradient-to-br from-primary/[0.06] via-transparent to-accent/[0.04] p-4">
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               Rezultat ziua curentă
@@ -280,17 +330,19 @@ export function BotsTradesColumn() {
         {loading ? (
           <p className="p-4 text-sm text-muted-foreground">Se încarcă…</p>
         ) : (
-          <div className="space-y-6 p-4">
-            <section>
+          <div className={cn("p-4", !isDashboard && "space-y-6")}>
+            <section className={cn(isDashboard && "fleet-live-positions")}>
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Poziții active (boți)
+                {isDashboard ? "Deschise acum" : "Poziții active (boți)"}
               </h3>
               {activeBots.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Niciun bot cu poziție deschisă în modul {modeTab === "paper" ? "paper" : "live"}.
+                  {isDashboard
+                    ? "Nicio poziție deschisă la boți în live."
+                    : `Niciun bot cu poziție deschisă în modul ${modeTab === "paper" ? "paper" : "live"}.`}
                 </p>
               ) : (
-                <div className="overflow-x-auto rounded-md border border-border/60">
+                <div className="fleet-table-shell overflow-x-auto rounded-md border border-border/60">
                   <table className="w-full min-w-[300px] text-left text-xs">
                     <thead>
                       <tr className="border-b border-border/80 bg-white/[0.02] text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -301,7 +353,7 @@ export function BotsTradesColumn() {
                         <th className="px-3 py-2">Live</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="fleet-tbody-live">
                       {activeBots.map((b) => (
                         <tr key={b.botId} className="border-b border-border/50 transition-colors hover:bg-white/[0.03]">
                           <td className="px-3 py-2">
@@ -352,6 +404,7 @@ export function BotsTradesColumn() {
               )}
             </section>
 
+            {!isDashboard ? (
             <section>
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Închideri astăzi (vânzări)
@@ -461,6 +514,7 @@ export function BotsTradesColumn() {
                 </div>
               )}
             </section>
+            ) : null}
           </div>
         )}
       </CardContent>

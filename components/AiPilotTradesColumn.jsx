@@ -8,6 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Bot, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  ensureLivePositionsPolling,
+  refreshLivePositionsFromServer,
+  useLivePositions,
+} from "@/lib/client/live-positions-store";
 
 const POLL_MS = 15_000;
 
@@ -31,7 +36,12 @@ function liveHrefForPair(pair) {
   return `/live?pair=${q}`;
 }
 
-export function AiPilotTradesColumn() {
+/**
+ * @param {{ className?: string; variant?: "default" | "dashboard" }} [props]
+ */
+export function AiPilotTradesColumn({ className, variant = "default" } = {}) {
+  const isDashboard = variant === "dashboard";
+  const live = useLivePositions();
   const [activePilot, setActivePilot] = useState([]);
   const [closedToday, setClosedToday] = useState([]);
   const [daySummary, setDaySummary] = useState(null);
@@ -41,6 +51,7 @@ export function AiPilotTradesColumn() {
   const [modeTab, setModeTab] = useState("real");
 
   const load = useCallback(async () => {
+    if (isDashboard) return;
     const { start, end } = localDayBounds();
     setDayLabel(
       start.toLocaleDateString("ro-RO", {
@@ -54,21 +65,11 @@ export function AiPilotTradesColumn() {
     try {
       const paperParam = modeTab === "paper" ? "1" : "0";
       const qs = `from=${encodeURIComponent(start.toISOString())}&to=${encodeURIComponent(end.toISOString())}&isPaper=${paperParam}`;
-      const [rPos, rTrades, rStats] = await Promise.all([
-        fetch("/api/live/positions"),
+
+      const [rTrades, rStats] = await Promise.all([
         fetch(`/api/trades?aiPilotControl=1&limit=150&side=sell&${qs}`),
         fetch(`/api/trades/pilot-daily-stats?${qs}`),
       ]);
-      const jPos = await rPos.json();
-      if (!rPos.ok) {
-        throw new Error(typeof jPos.error === "string" ? jPos.error : "Eroare poziții");
-      }
-      const manual = Array.isArray(jPos.manual) ? jPos.manual : [];
-      const isPaperTab = modeTab === "paper";
-      const openPilot = manual.filter(
-        (m) => m.origin === "pilot" && Boolean(m.paper) === isPaperTab
-      );
-      setActivePilot(openPilot);
 
       const jTr = await rTrades.json();
       if (!rTrades.ok) {
@@ -96,70 +97,120 @@ export function AiPilotTradesColumn() {
     } finally {
       setLoading(false);
     }
-  }, [modeTab]);
+  }, [isDashboard, modeTab]);
 
   useEffect(() => {
+    ensureLivePositionsPolling();
+  }, []);
+
+  useEffect(() => {
+    if (isDashboard) {
+      const manual = live.manual || [];
+      const openPilot = manual.filter((m) => m.origin === "pilot" && Boolean(m.paper) === false);
+      setActivePilot(openPilot);
+      setClosedToday([]);
+      setDaySummary(null);
+      setLoading(Boolean(live.loading) && manual.length === 0);
+      return;
+    }
+    const manual = live.manual || [];
+    const isPaperTab = modeTab === "paper";
+    setActivePilot(
+      manual.filter((m) => m.origin === "pilot" && Boolean(m.paper) === isPaperTab)
+    );
+  }, [isDashboard, live.manual, live.loading, live.version, modeTab]);
+
+  useEffect(() => {
+    if (isDashboard) return;
     setLoading(true);
     void load();
     const id = setInterval(() => void load(), POLL_MS);
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, isDashboard]);
 
   return (
-    <Card className="border-white/[0.08] bg-card/50 backdrop-blur-md lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:overflow-hidden">
+    <Card
+      className={cn(
+        "border-white/[0.08] bg-card/50 backdrop-blur-md",
+        isDashboard
+          ? "fleet-feed-card lg:static lg:max-h-none lg:overflow-visible"
+          : "lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:overflow-hidden",
+        className
+      )}
+    >
       <CardHeader className="border-b border-white/[0.06] pb-3">
         <div className="flex items-start justify-between gap-2">
-          <div className="space-y-1">
-            <CardTitle className="flex items-center gap-2 font-display text-base">
-              <Bot className="h-4 w-4 text-primary" strokeWidth={1.75} aria-hidden />
-              Tranzacții AI Pilot
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="flex flex-wrap items-center gap-2 font-display text-base">
+              <Bot className="h-4 w-4 shrink-0 text-primary" strokeWidth={1.75} aria-hidden />
+              {isDashboard ? "Pilot · poziții live" : "Tranzacții AI Pilot"}
             </CardTitle>
             <CardDescription className="text-xs leading-relaxed">
-              Poziții manuale pilot încă deschise (cu legătură în Live). Vânzările / închiderile din ziua curentă
-              (ora locală 00:00–24:00) apar mai jos. La „eșuat”, treci cu mouse-ul peste badge pentru motiv.
+              {isDashboard
+                ? "Doar poziții deschise acum (real). Istoric și paper pe pagina AI Pilot."
+                : "Poziții manuale pilot încă deschise (cu legătură în Live). Vânzările / închiderile din ziua curentă (ora locală 00:00–24:00) apar mai jos. La „eșuat”, treci cu mouse-ul peste badge pentru motiv."}
             </CardDescription>
-            <div
-              className="mt-3 flex max-w-xs rounded-lg border border-border/80 bg-muted/30 p-0.5"
-              role="tablist"
-              aria-label="Mod tranzacții pilot"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={modeTab === "real"}
-                className={cn(
-                  "flex-1 rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors",
-                  modeTab === "real"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                onClick={() => setModeTab("real")}
+            {!isDashboard ? (
+              <div
+                className="mt-3 flex max-w-xs rounded-lg border border-border/80 bg-muted/30 p-0.5"
+                role="tablist"
+                aria-label="Mod tranzacții pilot"
               >
-                Real (live)
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={modeTab === "paper"}
-                className={cn(
-                  "flex-1 rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors",
-                  modeTab === "paper"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                onClick={() => setModeTab("paper")}
-              >
-                Paper
-              </button>
-            </div>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={modeTab === "real"}
+                  className={cn(
+                    "flex-1 rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors",
+                    modeTab === "real"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  onClick={() => setModeTab("real")}
+                >
+                  Real (live)
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={modeTab === "paper"}
+                  className={cn(
+                    "flex-1 rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors",
+                    modeTab === "paper"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  onClick={() => setModeTab("paper")}
+                >
+                  Paper
+                </button>
+              </div>
+            ) : null}
           </div>
-          <Button type="button" size="sm" variant="secondary" className="shrink-0 text-xs" onClick={() => void load()}>
-            Reîmprospătează
-          </Button>
+          <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+            {isDashboard ? (
+              <span className="fleet-mini-live" title="Flux date poziții">
+                <span className="fleet-mini-live-dot" aria-hidden />
+                Live
+              </span>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="text-xs"
+              onClick={() => {
+                void refreshLivePositionsFromServer();
+                if (!isDashboard) void load();
+              }}
+            >
+              Reîmprospătează
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="p-0 lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto">
-        {!loading && daySummary != null && (
+        {!isDashboard && !loading && daySummary != null && (
           <div className="border-b border-white/[0.08] bg-gradient-to-br from-primary/[0.06] via-transparent to-accent/[0.04] p-4">
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               Rezultat ziua curentă
@@ -205,17 +256,19 @@ export function AiPilotTradesColumn() {
         {loading ? (
           <p className="p-4 text-sm text-muted-foreground">Se încarcă…</p>
         ) : (
-          <div className="space-y-6 p-4">
-            <section>
+          <div className={cn("p-4", !isDashboard && "space-y-6")}>
+            <section className={cn(isDashboard && "fleet-live-positions")}>
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Poziții active (pilot)
+                {isDashboard ? "Deschise acum" : "Poziții active (pilot)"}
               </h3>
               {activePilot.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Nicio poziție manuală deschisă marcată pilot în modul {modeTab === "paper" ? "paper" : "live"}.
+                  {isDashboard
+                    ? "Nicio poziție pilot deschisă în live."
+                    : `Nicio poziție manuală deschisă marcată pilot în modul ${modeTab === "paper" ? "paper" : "live"}.`}
                 </p>
               ) : (
-                <div className="overflow-x-auto rounded-md border border-border/60">
+                <div className="fleet-table-shell overflow-x-auto rounded-md border border-border/60">
                   <table className="w-full min-w-[280px] text-left text-xs">
                     <thead>
                       <tr className="border-b border-border/80 bg-white/[0.02] text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -226,7 +279,7 @@ export function AiPilotTradesColumn() {
                         <th className="px-3 py-2">Live</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="fleet-tbody-live">
                       {activePilot.map((m) => (
                         <tr key={m.pair} className="border-b border-border/50 transition-colors hover:bg-white/[0.03]">
                           <td className="px-3 py-2 font-medium">{m.pair}</td>
@@ -260,6 +313,7 @@ export function AiPilotTradesColumn() {
               )}
             </section>
 
+            {!isDashboard ? (
             <section>
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Închideri astăzi (vânzări)
@@ -358,6 +412,7 @@ export function AiPilotTradesColumn() {
                 </div>
               )}
             </section>
+            ) : null}
           </div>
         )}
       </CardContent>

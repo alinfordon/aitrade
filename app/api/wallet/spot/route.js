@@ -7,7 +7,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { respondIfMongoMissing } from "@/lib/mongo-env";
 import Bot from "@/models/Bot";
 import { buildSuggestedPairs, paperBalancesList } from "@/lib/wallet/suggest-pairs";
-import { estimateSpotTotalUsd, paperUsdcOverview, realUsdcOverview } from "@/lib/wallet/usdc-overview";
+import { attachUsdTotalsToBalances, paperUsdcOverview, realUsdcOverview } from "@/lib/wallet/usdc-overview";
 import { DEFAULT_QUOTE_ASSET, getManualPaperQuoteBalance } from "@/lib/market-defaults";
 import { mapBinanceUserMessageAsync } from "@/lib/binance/map-exchange-error";
 
@@ -85,9 +85,10 @@ export async function GET() {
       } else {
         try {
           const raw = await getBalance(apiKey, secret, { futures: false });
+          const rows = formatRealBalances(raw);
           real = {
             connected: true,
-            balances: formatRealBalances(raw),
+            balances: await attachUsdTotalsToBalances(rows),
             error: null,
           };
         } catch (e) {
@@ -110,10 +111,10 @@ export async function GET() {
   let overviewReal = null;
   if (real.connected && Array.isArray(real.balances)) {
     try {
-      const [base, totalUsdEstimate] = await Promise.all([
-        realUsdcOverview(real.balances),
-        estimateSpotTotalUsd(real.balances),
-      ]);
+      const base = await realUsdcOverview(real.balances);
+      const totalUsdEstimate = Number(
+        real.balances.reduce((s, r) => s + (Number(r.usdTotal) || 0), 0).toFixed(2)
+      );
       overviewReal = { ...base, totalUsdEstimate };
     } catch {
       overviewReal = {

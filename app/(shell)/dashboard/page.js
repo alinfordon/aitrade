@@ -24,15 +24,20 @@ import { BinanceConnectionBadge } from "@/components/BinanceConnectionBadge";
 import { RealSpotBalancesTable } from "@/components/RealSpotBalancesTable";
 import { UsdcEquityCharts } from "@/components/dashboard/UsdcEquityCharts";
 import { TradeWinLossCharts } from "@/components/dashboard/TradeWinLossCharts";
+import { AiPilotDashboardRunPanel } from "@/components/dashboard/AiPilotDashboardRunPanel";
+import { AiPilotTradesColumn } from "@/components/AiPilotTradesColumn";
+import { BotsTradesColumn } from "@/components/BotsTradesColumn";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
 import { cn } from "@/lib/utils";
+import "@/components/dashboard/fleet-dashboard.css";
 
-function StatTile({ icon: Icon, label, children, hint, accentClass }) {
+function StatTile({ icon: Icon, label, children, hint, accentClass, className }) {
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-2xl border border-white/[0.07] bg-gradient-to-br from-card/90 via-card/55 to-card/30 p-px shadow-lg shadow-black/30",
-        "backdrop-blur-xl transition-all duration-500 hover:border-primary/35 hover:shadow-[0_0_50px_-12px_hsl(160_84%_39%_/_0.28)]"
+        "fleet-stat-tile group relative overflow-hidden rounded-2xl border border-white/[0.07] bg-gradient-to-br from-card/90 via-card/55 to-card/30 p-px shadow-lg shadow-black/30",
+        "backdrop-blur-xl transition-all duration-500 hover:border-amber-500/25 hover:shadow-[0_0_50px_-12px_rgba(251,191,36,0.18)]",
+        className
       )}
     >
       <div className="relative rounded-[calc(1rem-1px)] bg-gradient-to-br from-background/25 via-transparent to-accent/[0.03] p-4 sm:p-5">
@@ -112,81 +117,87 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-8 pb-4">
-      <header className="relative space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge
-                variant="outline"
-                className="border-primary/40 bg-primary/10 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-primary"
-              >
-                <Sparkles className="mr-1 inline h-3 w-3" />
-                AI · 2026
-              </Badge>
-              <Badge variant="secondary" className="text-[10px] font-normal uppercase tracking-wider">
-                Binance Spot
-              </Badge>
+    <div className="fleet-dashboard w-full min-w-0 space-y-8 pb-4">
+      <header className="fleet-hero fleet-hero--animated">
+        <div className="fleet-hero-inner space-y-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="fleet-live-strip">
+                  <span className="fleet-live-dot" aria-hidden />
+                  Live
+                  <span className="font-normal tracking-normal text-emerald-200/80">· sisteme</span>
+                </span>
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/35 bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-200"
+                >
+                  <Sparkles className="mr-1 inline h-3 w-3" />
+                  War room
+                </Badge>
+                <Badge variant="secondary" className="text-[10px] font-normal uppercase tracking-wider">
+                  Binance Spot
+                </Badge>
+              </div>
+              <h1 className="fleet-title font-display text-3xl sm:text-4xl md:text-[2.65rem]">
+                Command fleet
+              </h1>
+              <p className="fleet-subtitle">
+                Panou unic: pilot AI, tranzacții pilot și boți, performanță live, solduri și plan — inspirat de
+                experiențele tip „fleet trading”, adaptat pentru fluxul tău aitrade.
+              </p>
             </div>
-            <h1 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl md:text-[2.75rem] md:leading-tight">
-              Command center
-            </h1>
-            <p className="max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Vedere de ansamblu: performanță, roboți activi, solduri și upgrade — într-un singur ecran conceput
-              pentru fluxul de trading și automatizare.
-            </p>
+            <div className="flex flex-wrap gap-2 lg:shrink-0 lg:justify-end">
+              <Button type="button" size="sm" variant="outline" className="border-white/15 bg-white/[0.04]" asChild>
+                <Link href="/strategies">
+                  <Cpu className="mr-2 h-4 w-4" />
+                  Strategii
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="border border-amber-500/30 bg-amber-500/15 text-amber-50 shadow-lg shadow-amber-900/20 hover:bg-amber-500/25"
+                asChild
+              >
+                <Link href="/trading">
+                  Tranzacționează
+                  <ArrowUpRight className="ml-1 h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2 sm:justify-end">
-            <Button type="button" size="sm" variant="outline" className="border-white/15 bg-white/[0.03]" asChild>
-              <Link href="/strategies">
-                <Cpu className="mr-2 h-4 w-4" />
-                Strategii
-              </Link>
-            </Button>
-            <Button type="button" size="sm" className="shadow-lg shadow-primary/15" asChild>
-              <Link href="/trading">
-                Tranzacționează
-                <ArrowUpRight className="ml-1 h-4 w-4" />
-              </Link>
-            </Button>
-          </div>
-        </div>
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {QUICK_LINKS.map(({ href, label, desc, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "group flex items-center gap-3 rounded-xl border border-white/[0.07] bg-card/40 px-3 py-3 backdrop-blur-md transition-all",
-                "hover:border-primary/35 hover:bg-card/60 hover:shadow-md hover:shadow-primary/5"
-              )}
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-accent transition-colors group-hover:text-primary">
-                <Icon className="h-5 w-5" strokeWidth={1.75} />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1 font-medium text-foreground">
-                  {label}
-                  <ArrowUpRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-70" />
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {QUICK_LINKS.map(({ href, label, desc, icon: Icon }) => (
+              <Link key={href} href={href} className="fleet-quick-link group flex items-center gap-3 px-3 py-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-amber-200/90 transition-colors group-hover:text-amber-100">
+                  <Icon className="h-5 w-5" strokeWidth={1.75} />
                 </div>
-                <p className="truncate text-[11px] text-muted-foreground">{desc}</p>
-              </div>
-            </Link>
-          ))}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1 font-medium text-foreground">
+                    {label}
+                    <ArrowUpRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-70" />
+                  </div>
+                  <p className="truncate text-[11px] text-muted-foreground">{desc}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
       </header>
 
-      <section className="relative mt-8">
-        <Card className="overflow-hidden border-white/[0.08] bg-gradient-to-br from-card/80 via-card/50 to-card/30 shadow-xl shadow-black/20 backdrop-blur-xl">
-          <CardHeader className="flex flex-col gap-4 border-b border-white/[0.06] bg-white/[0.02] pb-4 sm:flex-row sm:items-start sm:justify-between">
+      {/* Rândul de sus: Sold Binance + Activitate AI Pilot — pe același rând */}
+      <section className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <Card className="fleet-wallet-panel h-full overflow-hidden border-white/[0.08] bg-gradient-to-br from-card/80 via-card/50 to-card/30 shadow-xl shadow-black/20 backdrop-blur-xl">
+          <CardHeader className="flex flex-col gap-3 border-b border-white/[0.06] bg-white/[0.02] pb-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <Wallet className="h-4 w-4 text-primary" strokeWidth={1.75} />
-                <CardTitle className="font-display text-lg sm:text-xl">Binance Spot — sold live</CardTitle>
+                <CardTitle className="font-display text-base">Binance Spot — sold live</CardTitle>
               </div>
-              <CardDescription className="text-xs sm:text-sm">
-                Conectat = citire sold cu cheile tale. Detalii și editare în Settings.
+              <CardDescription className="text-xs">
+                Monede cu val. estimată &gt; 1 USD. Tot soldul în Settings.
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -207,100 +218,135 @@ export default function DashboardPage() {
               )}
             </div>
           </CardHeader>
-          <CardContent className="pt-6">
+          <CardContent className="pt-4">
             {wallet?.real?.connected &&
             wallet?.overview?.real &&
             typeof wallet.overview.real.totalUsdEstimate === "number" ? (
-              <div className="mb-6 overflow-hidden rounded-2xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.12] via-card/40 to-sky-500/[0.06] p-4 shadow-lg shadow-black/20 sm:p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex items-center gap-2 text-emerald-400/95">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05]">
-                      <DollarSign className="h-5 w-5" strokeWidth={1.75} />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        Sold total estimat
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">Binance Spot · în USD (≈ USDC)</p>
-                    </div>
-                  </div>
+              <div className="mb-4 flex items-center gap-3 overflow-hidden rounded-xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.12] via-card/40 to-sky-500/[0.06] px-4 py-3 shadow-md shadow-black/20">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-emerald-400">
+                  <DollarSign className="h-5 w-5" strokeWidth={1.75} />
                 </div>
-                <p className="mt-4 font-mono text-3xl font-semibold tabular-nums tracking-tight text-foreground sm:text-4xl">
-                  {wallet.overview.real.totalUsdEstimate.toLocaleString("en-US", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}{" "}
-                  <span className="text-xl font-medium text-muted-foreground sm:text-2xl">USD</span>
-                </p>
-                <p className="mt-3 max-w-xl text-[11px] leading-relaxed text-muted-foreground">
-                  Sumă <span className="text-foreground/90">total</span> (disponibil + blocat în ordine) pentru
-                  fiecare activ, evaluată la preț spot USDC. Stabile majore (USDC, USDT, FDUSD…) sunt luate ca
-                  1:1 cu USD.
-                </p>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Sold total estimat
+                  </p>
+                  <p className="font-mono text-xl font-semibold tabular-nums tracking-tight text-foreground sm:text-2xl">
+                    {wallet.overview.real.totalUsdEstimate.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    <span className="text-base font-medium text-muted-foreground">USD</span>
+                  </p>
+                </div>
               </div>
             ) : wallet?.hasApiKeys && !wallet?.real?.connected ? (
-              <div className="mb-6 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-[11px] text-muted-foreground">
-                Conectează cheile Binance și apasă Reîmprospătează pentru sold total în USD.
+              <div className="mb-4 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-[11px] text-muted-foreground">
+                Conectează cheile Binance și apasă Reîmprospătează.
               </div>
             ) : null}
-            {wallet?.real?.error ? <p className="mb-4 text-sm text-destructive">{wallet.real.error}</p> : null}
-            <RealSpotBalancesTable wallet={wallet} />
+            {wallet?.real?.error ? <p className="mb-3 text-sm text-destructive">{wallet.real.error}</p> : null}
+            <RealSpotBalancesTable wallet={wallet} minUsdTotal={1} />
           </CardContent>
         </Card>
+
+        <AiPilotDashboardRunPanel />
       </section>
 
-      <section className="relative mt-10 grid gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile
-          icon={TrendingUp}
-          label="Profit total live"
-          accentClass="bg-emerald-500/25"
-          hint="Însumat din tranzacții reale (nu paper)"
-        >
-          <span className={totalProfit != null && totalProfit >= 0 ? "text-emerald-400" : "text-rose-400"}>
-            {liveStats != null ? Number(totalProfit).toFixed(4) : "—"}
-          </span>
-          <span className="text-lg font-normal text-muted-foreground sm:text-xl"> USDC</span>
-        </StatTile>
-        <StatTile
-          icon={Zap}
-          label="PnL azi (live)"
-          accentClass="bg-amber-400/20"
-          hint={`Tranzacții reale · zi UTC ${todayLabel}`}
-        >
-          <span className={todayProfit >= 0 ? "text-emerald-400" : "text-rose-400"}>
-            {todayProfit >= 0 ? "+" : ""}
-            {todayProfit.toFixed(4)}
-          </span>
-          <span className="text-lg font-normal text-muted-foreground sm:text-xl"> USDC</span>
-        </StatTile>
-        <StatTile
-          icon={Percent}
-          label="Win rate live"
-          accentClass="bg-cyan-500/20"
-          hint="Pe tranzacții reale cu PnL înregistrat"
-        >
-          <span className="text-cyan-300">{(winRate * 100).toFixed(1)}%</span>
-        </StatTile>
-        <StatTile
-          icon={Bot}
-          label="Bots activi"
-          accentClass="bg-violet-500/20"
-          hint={Number.isFinite(maxB) ? `Limită plan: ${maxB}` : "Nelimitat (Elite)"}
-        >
-          {activeBots}
-          <span className="text-lg font-normal text-muted-foreground sm:text-xl">
-            {" "}
-            / {Number.isFinite(maxB) ? maxB : "∞"}
-          </span>
-        </StatTile>
+      {/* Flux live — poziții deschise pilot & boți */}
+      <section className="fleet-dash-flux space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="fleet-section-intro">
+            <div className="fleet-section-intro-icon" aria-hidden>
+              <Bot className="h-4 w-4" strokeWidth={1.75} />
+            </div>
+            <div className="fleet-section-intro-stack min-w-0">
+              <p className="fleet-section-label">Flux live</p>
+              <p className="fleet-section-subkicker">
+                Pilot și boți — doar poziții deschise acum (real). Vezi istoric complet pe paginile dedicate.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+            <Link href="/ai-pilot" className="font-medium text-primary underline-offset-2 hover:underline">
+              Pagina AI Pilot
+            </Link>
+            <span aria-hidden>·</span>
+            <Link href="/bots" className="font-medium text-primary underline-offset-2 hover:underline">
+              Pagina Boți
+            </Link>
+          </div>
+        </div>
+        <div className="fleet-live-deck grid gap-4 xl:grid-cols-2">
+          <AiPilotTradesColumn variant="dashboard" className="fleet-trade-card min-h-[240px]" />
+          <BotsTradesColumn variant="dashboard" className="fleet-trade-card min-h-[240px]" />
+        </div>
+      </section>
+
+      {/* Performanță live — KPI tiles */}
+      <section className="fleet-dash-stats space-y-3">
+        <div className="fleet-section-intro fleet-section-intro--dense">
+          <div className="fleet-section-intro-icon" aria-hidden>
+            <Activity className="h-4 w-4" strokeWidth={1.75} />
+          </div>
+          <p className="fleet-section-label">Performanță live</p>
+        </div>
+        <div className="fleet-stat-grid grid gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatTile
+            icon={TrendingUp}
+            label="Profit total live"
+            accentClass="bg-emerald-500/25"
+            hint="Însumat din tranzacții reale (nu paper)"
+          >
+            <span className={totalProfit != null && totalProfit >= 0 ? "text-emerald-400" : "text-rose-400"}>
+              {liveStats != null ? Number(totalProfit).toFixed(4) : "—"}
+            </span>
+            <span className="text-lg font-normal text-muted-foreground sm:text-xl"> USDC</span>
+          </StatTile>
+          <StatTile
+            icon={Zap}
+            label="PnL azi (live)"
+            accentClass="bg-amber-400/20"
+            hint={`Tranzacții reale · zi UTC ${todayLabel}`}
+          >
+            <span className={todayProfit >= 0 ? "text-emerald-400" : "text-rose-400"}>
+              {todayProfit >= 0 ? "+" : ""}
+              {todayProfit.toFixed(4)}
+            </span>
+            <span className="text-lg font-normal text-muted-foreground sm:text-xl"> USDC</span>
+          </StatTile>
+          <StatTile
+            icon={Percent}
+            label="Win rate live"
+            accentClass="bg-cyan-500/20"
+            hint="Pe tranzacții reale cu PnL înregistrat"
+          >
+            <span className="text-cyan-300">{(winRate * 100).toFixed(1)}%</span>
+          </StatTile>
+          <StatTile
+            icon={Bot}
+            label="Bots activi"
+            accentClass="bg-violet-500/20"
+            hint={Number.isFinite(maxB) ? `Limită plan: ${maxB}` : "Nelimitat (Elite)"}
+          >
+            {activeBots}
+            <span className="text-lg font-normal text-muted-foreground sm:text-xl">
+              {" "}
+              / {Number.isFinite(maxB) ? maxB : "∞"}
+            </span>
+          </StatTile>
+        </div>
       </section>
 
       <section className="relative mt-10 space-y-3">
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-primary" />
-          <h2 className="font-display text-lg font-semibold tracking-tight">Evoluție USDC (live)</h2>
+        <div className="fleet-section-intro">
+          <div className="fleet-section-intro-icon fleet-section-intro-icon--accent" aria-hidden>
+            <Activity className="h-4 w-4" strokeWidth={1.75} />
+          </div>
+          <div className="fleet-section-intro-stack">
+            <h2 className="fleet-section-heading">Evoluție USDC (live)</h2>
+          </div>
         </div>
-        <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
+        <p className="fleet-section-desc">
           Grafice cumulative din PnL-ul tranzacțiilor reale (nu paper) — reflectă creșterea sau scăderea
           rezultatului realizat în timp, nu soldul brut din cont Binance.
         </p>
@@ -308,20 +354,26 @@ export default function DashboardPage() {
       </section>
 
       <section className="relative mt-10 space-y-3">
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-primary" />
-          <h2 className="font-display text-lg font-semibold tracking-tight">Tranzacții câștig / pierdere (live)</h2>
+        <div className="fleet-section-intro">
+          <div className="fleet-section-intro-icon fleet-section-intro-icon--accent" aria-hidden>
+            <Activity className="h-4 w-4" strokeWidth={1.75} />
+          </div>
+          <div className="fleet-section-intro-stack">
+            <h2 className="fleet-section-heading">Tranzacții câștig / pierdere (live)</h2>
+          </div>
         </div>
-        <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
+        <p className="fleet-section-desc">
           Distribuție zilnică și lunară după rezultat: doar tranzacții reale cu PnL înregistrat (nu paper).
         </p>
         <TradeWinLossCharts />
       </section>
 
       <section className="relative mt-8">
-        <div className="mb-4 flex items-center gap-2">
-          <Cpu className="h-4 w-4 text-accent" />
-          <h2 className="font-display text-lg font-semibold tracking-tight">Plan &amp; limite</h2>
+        <div className="mb-4 fleet-section-intro fleet-section-intro--dense">
+          <div className="fleet-section-intro-icon fleet-section-intro-icon--accent" aria-hidden>
+            <Cpu className="h-4 w-4" strokeWidth={1.75} />
+          </div>
+          <h2 className="fleet-section-heading">Plan &amp; limite</h2>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           {[

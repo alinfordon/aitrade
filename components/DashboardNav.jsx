@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { BinanceConnectionBadge } from "@/components/BinanceConnectionBadge";
 import { formatBalanceAmount } from "@/components/RealSpotBalancesTable";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
+import { clearLivePositionsCache } from "@/lib/client/live-positions-store";
 
 const baseLinks = [
   { href: "/dashboard", label: "Dashboard" },
@@ -113,6 +114,7 @@ export function DashboardNav() {
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
+    clearLivePositionsCache();
     window.location.href = "/login";
   }
 

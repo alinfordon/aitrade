@@ -1,0 +1,537 @@
+/**
+ * Tema „War Room” / fleet pentru pagina Dashboard (scoped).
+ * Inspirat vizual de dashboard-uri tip trading command center.
+ */
+
+.fleet-dashboard {
+  --fleet-amber: #fbbf24;
+  --fleet-amber-glow: rgba(251, 191, 36, 0.22);
+  --fleet-line: rgba(255, 255, 255, 0.08);
+  --fleet-glass: rgba(15, 23, 42, 0.58);
+  --fleet-slate-mute: rgba(148, 163, 184, 0.9);
+}
+
+.fleet-dashboard::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.28;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 85% 55% at 50% -5%, black 18%, transparent 72%);
+}
+
+/* Fără translateY: transformul nu mută box-ul în layout și pictatul se suprapunea peste secțiunea următoare */
+@keyframes fleet-rise-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fleet-tile-pop {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fleet-hero-glow {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    opacity: 0.88;
+    transform: scale(1.02) translateY(1px);
+  }
+}
+
+@keyframes fleet-shine-sweep {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -20% 0;
+  }
+}
+
+@keyframes fleet-wallet-halo {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.fleet-dashboard > * {
+  position: relative;
+  z-index: 1;
+  animation: fleet-rise-fade 0.62s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+.fleet-dashboard > *:nth-child(1) {
+  animation-delay: 0.02s;
+}
+.fleet-dashboard > *:nth-child(2) {
+  animation-delay: 0.07s;
+}
+.fleet-dashboard > *:nth-child(3) {
+  animation-delay: 0.12s;
+}
+.fleet-dashboard > *:nth-child(4) {
+  animation-delay: 0.16s;
+}
+.fleet-dashboard > *:nth-child(5) {
+  animation-delay: 0.2s;
+}
+.fleet-dashboard > *:nth-child(6) {
+  animation-delay: 0.24s;
+}
+.fleet-dashboard > *:nth-child(7) {
+  animation-delay: 0.28s;
+}
+.fleet-dashboard > *:nth-child(8) {
+  animation-delay: 0.32s;
+}
+.fleet-dashboard > *:nth-child(9) {
+  animation-delay: 0.36s;
+}
+
+.fleet-stat-grid .fleet-stat-tile {
+  opacity: 0;
+  animation: fleet-tile-pop 0.52s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.fleet-stat-grid .fleet-stat-tile:nth-child(1) {
+  animation-delay: 0.14s;
+}
+.fleet-stat-grid .fleet-stat-tile:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.fleet-stat-grid .fleet-stat-tile:nth-child(3) {
+  animation-delay: 0.26s;
+}
+.fleet-stat-grid .fleet-stat-tile:nth-child(4) {
+  animation-delay: 0.32s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-dashboard > * {
+    animation: none;
+  }
+
+  .fleet-stat-grid .fleet-stat-tile {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+.fleet-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  border: 1px solid var(--fleet-line);
+  background:
+    linear-gradient(145deg, rgba(251, 191, 36, 0.08) 0%, transparent 42%),
+    linear-gradient(180deg, var(--fleet-glass) 0%, rgba(2, 6, 23, 0.35) 100%);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 24px 80px -24px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.fleet-hero::after {
+  content: "";
+  position: absolute;
+  inset: -40% -20% auto;
+  height: 55%;
+  background: radial-gradient(ellipse at 50% 0%, var(--fleet-amber-glow), transparent 70%);
+  pointer-events: none;
+  transform-origin: 50% 0%;
+}
+
+.fleet-hero--animated::after {
+  animation: fleet-hero-glow 7s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-hero--animated::after {
+    animation: none;
+  }
+}
+
+.fleet-hero-inner {
+  position: relative;
+  z-index: 1;
+  padding: 1.25rem 1.25rem 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .fleet-hero-inner {
+    padding: 1.5rem 1.75rem 1.75rem;
+  }
+}
+
+.fleet-live-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.1);
+  padding: 0.35rem 0.85rem;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgb(134, 239, 172);
+  box-shadow: 0 0 24px -4px rgba(34, 197, 94, 0.35);
+}
+
+.fleet-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: rgb(74, 222, 128);
+  animation: fleet-live-blink 2.2s ease-in-out infinite;
+}
+
+@keyframes fleet-live-blink {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.5);
+  }
+  50% {
+    opacity: 0.65;
+    box-shadow: 0 0 0 6px rgba(74, 222, 128, 0);
+  }
+}
+
+.fleet-title {
+  font-family: var(--font-display, ui-sans-serif, system-ui);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  background: linear-gradient(180deg, #fff 0%, rgba(255, 255, 255, 0.72) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.fleet-subtitle {
+  max-width: 36rem;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.fleet-quick-link {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(2, 6, 23, 0.4);
+  transition:
+    border-color 0.22s ease,
+    box-shadow 0.28s ease,
+    background 0.22s ease,
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.fleet-quick-link:hover {
+  border-color: rgba(251, 191, 36, 0.35);
+  box-shadow: 0 0 32px -8px var(--fleet-amber-glow);
+  background: rgba(15, 23, 42, 0.55);
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-quick-link {
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease,
+      background 0.15s ease;
+  }
+
+  .fleet-quick-link:hover {
+    transform: none;
+  }
+}
+
+.fleet-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+/* Antet unificat secțiuni (icon + titlu / kicker) */
+.fleet-section-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.fleet-section-intro--dense {
+  align-items: center;
+}
+
+@media (min-width: 640px) {
+  .fleet-section-intro {
+    align-items: center;
+  }
+}
+
+.fleet-section-intro-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgb(251 191 36 / 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.fleet-section-intro-icon--accent {
+  color: hsl(186 100% 48% / 0.95);
+}
+
+.fleet-section-intro-stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.fleet-section-heading {
+  margin: 0;
+  font-family: var(--font-display, ui-sans-serif, system-ui);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: hsl(var(--foreground));
+}
+
+@media (min-width: 640px) {
+  .fleet-section-heading {
+    font-size: 1.125rem;
+  }
+}
+
+.fleet-section-desc {
+  max-width: 42rem;
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.65;
+  color: var(--fleet-slate-mute);
+}
+
+.fleet-section-subkicker {
+  margin: 0;
+  max-width: 32rem;
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: rgba(148, 163, 184, 0.88);
+}
+
+/* Carduri „live feed” (dashboard pilot / boți) — similar war room */
+.fleet-feed-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.fleet-feed-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 40%,
+    rgba(251, 191, 36, 0.045) 50%,
+    transparent 60%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  animation: fleet-shine-sweep 9s linear infinite;
+}
+
+.fleet-feed-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-feed-card::before {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+.fleet-mini-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(34, 197, 94, 0.32);
+  background: rgba(34, 197, 94, 0.09);
+  padding: 0.2rem 0.55rem 0.2rem 0.45rem;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(167 243 208 / 0.95);
+  box-shadow: 0 0 16px -4px rgba(34, 197, 94, 0.28);
+}
+
+.fleet-mini-live-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: rgb(74, 222, 128);
+  animation: fleet-live-blink 2s ease-in-out infinite;
+}
+
+.fleet-table-shell {
+  border-radius: 0.5rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.fleet-tbody-live tr {
+  transition:
+    background-color 0.18s ease,
+    transform 0.2s ease;
+}
+
+.fleet-tbody-live tr:hover {
+  transform: translateX(2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-tbody-live tr:hover {
+    transform: none;
+  }
+}
+
+.fleet-live-positions {
+  animation: fleet-rise-fade 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: 0.08s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-live-positions {
+    animation: none;
+  }
+}
+
+/* Flux live: stacking clar sub hero, fără bleed în secțiunea următoare */
+.fleet-dash-flux {
+  position: relative;
+  z-index: 2;
+  isolation: isolate;
+}
+
+.fleet-dash-stats {
+  position: relative;
+  z-index: 3;
+}
+
+.fleet-live-deck {
+  align-items: stretch;
+  min-width: 0;
+  width: 100%;
+}
+
+@media (min-width: 1280px) {
+  .fleet-live-deck {
+    gap: 1.5rem;
+  }
+}
+
+.fleet-wallet-panel {
+  position: relative;
+}
+
+.fleet-wallet-panel::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: -2px;
+  z-index: 2;
+  border-radius: inherit;
+  box-shadow:
+    0 0 0 1px rgba(16, 185, 129, 0.12),
+    0 0 56px -12px rgba(16, 185, 129, 0.18);
+  opacity: 0.4;
+  animation: fleet-wallet-halo 6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-wallet-panel::after {
+    animation: none;
+    opacity: 0.25;
+  }
+}
+
+.fleet-pilot-panel {
+  border-radius: 1rem;
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  background:
+    linear-gradient(125deg, rgba(251, 191, 36, 0.06) 0%, transparent 55%),
+    rgba(2, 6, 23, 0.5);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 20px 50px -20px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.fleet-pilot-panel .fleet-pilot-summary {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1rem 1.1rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.fleet-trade-card {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.25),
+    0 18px 48px -18px rgba(0, 0, 0, 0.55);
+  transition: border-color 0.22s ease, box-shadow 0.28s ease;
+}
+
+.fleet-trade-card:hover {
+  border-color: rgba(251, 191, 36, 0.16) !important;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.3),
+    0 22px 56px -16px rgba(0, 0, 0, 0.58),
+    0 0 40px -18px var(--fleet-amber-glow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-trade-card {
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+}

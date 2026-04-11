@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import mongoose from "mongoose";
 import { NextResponse } from "next/server";
 import { connectDB } from "@/models/db";
@@ -13,9 +14,60 @@ import { summarizeStrategyDefinition } from "@/lib/strategy-human-summary";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+/**
+ * Amprentă poziții (fără mark / lastRun / strategySummary) — detectează schimbări reale de poziție sau SL/TP.
+ */
+function structureFingerprint(manual, bots) {
+  const m = [...manual]
+    .map((x) => ({
+      pair: normSpotPair(x.pair),
+      qty: x.qty,
+      avgEntry: x.avgEntry,
+      paper: Boolean(x.paper),
+      origin: x.origin,
+      stopLoss: x.stopLoss,
+      takeProfit: x.takeProfit,
+    }))
+    .sort((a, b) => a.pair.localeCompare(b.pair));
+  const b = [...bots]
+    .map((x) => ({
+      botId: x.botId,
+      pair: normSpotPair(x.pair),
+      qty: x.qty,
+      avgEntry: x.avgEntry,
+      side: x.side,
+      botMode: x.botMode,
+      stopLoss: x.stopLoss,
+      takeProfit: x.takeProfit,
+      strategyName: x.strategyName,
+      strategySource: x.strategySource,
+      botStatus: x.botStatus,
+    }))
+    .sort((a, b) => String(a.botId).localeCompare(String(b.botId)));
+  return createHash("sha256").update(JSON.stringify({ m, b })).digest("hex").slice(0, 24);
+}
+
+async function markPricesForPairs(pairs) {
+  const uniq = [...new Set(pairs.filter(Boolean))];
+  const entries = await Promise.all(
+    uniq.map(async (pair) => {
+      try {
+        const mp = await getPrice(pair);
+        return [pair, Number.isFinite(mp) && mp > 0 ? mp : null];
+      } catch {
+        return [pair, null];
+      }
+    })
+  );
+  return new Map(entries);
+}
+
+export async function GET(request) {
   const missing = respondIfMongoMissing();
   if (missing) return missing;
+
+  const { searchParams } = new URL(request.url);
+  const structureOnly = searchParams.get("structure") === "1";
 
   const { session, error } = await requireAuth();
   if (error) return error;
@@ -41,19 +93,12 @@ export async function GET() {
     const qty = Number(raw?.qty ?? 0);
     if (!Number.isFinite(qty) || qty <= 1e-12) continue;
     const avgEntry = Number(raw?.avg ?? raw?.avgEntry ?? 0);
-    let markPrice = null;
-    try {
-      const mp = await getPrice(pair);
-      markPrice = Number.isFinite(mp) && mp > 0 ? mp : null;
-    } catch {
-      markPrice = null;
-    }
     const p = prot[pair] || {};
     manual.push({
       pair,
       qty,
       avgEntry,
-      markPrice,
+      markPrice: null,
       stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null,
       takeProfit: p.takeProfit != null ? Number(p.takeProfit) : null,
       source: "manual",
@@ -113,14 +158,6 @@ export async function GET() {
     }
     if (!Number.isFinite(qty) || qty <= 1e-12) continue;
 
-    let markPrice = null;
-    try {
-      const mp = await getPrice(b.pair);
-      markPrice = Number.isFinite(mp) && mp > 0 ? mp : null;
-    } catch {
-      markPrice = null;
-    }
-
     const strat = b.strategyId && typeof b.strategyId === "object" ? b.strategyId : null;
     const strategySummary = strat?.definition
       ? summarizeStrategyDefinition(strat.definition)
@@ -132,7 +169,7 @@ export async function GET() {
       qty,
       avgEntry: entryPrice,
       side,
-      markPrice,
+      markPrice: null,
       stopLoss: b.risk?.stopLossPct ?? null,
       takeProfit: b.risk?.takeProfitPct ?? null,
       source: "bot",
@@ -149,5 +186,23 @@ export async function GET() {
     });
   }
 
-  return NextResponse.json({ manual, bots });
+  if (!structureOnly) {
+    const pricePairs = [...new Set([...manual.map((m) => m.pair), ...bots.map((b) => b.pair)])];
+    const markByPair = await markPricesForPairs(pricePairs);
+    for (const m of manual) {
+      m.markPrice = markByPair.get(m.pair) ?? null;
+    }
+    for (const b of bots) {
+      b.markPrice = markByPair.get(b.pair) ?? null;
+    }
+  }
+
+  const structureFp = structureFingerprint(manual, bots);
+
+  return NextResponse.json({
+    manual,
+    bots,
+    structureFp,
+    ...(structureOnly ? { structureOnly: true } : {}),
+  });
 }

@@ -12,6 +12,10 @@ import { LiveBinanceChart } from "@/components/LiveBinanceChart";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
 import { canUseLiveAiAnalysis } from "@/lib/plans";
 import { summarizeStrategyDefinition } from "@/lib/strategy-human-summary";
+import {
+  ensureLivePositionsPolling,
+  mergeLivePositionsFromApi,
+} from "@/lib/client/live-positions-store";
 
 const TF_OPTIONS = ["15m", "1h", "4h"];
 
@@ -197,12 +201,17 @@ export function LiveTradingPanel() {
     setAiError(null);
   }, [selected?.pair, kind]);
 
+  useEffect(() => {
+    ensureLivePositionsPolling();
+  }, []);
+
   const loadPositions = useCallback(async () => {
     const r = await fetch("/api/live/positions");
     const j = await r.json();
     if (!r.ok) {
       throw new Error(j.error || "Nu s-au putut încărca pozițiile");
     }
+    mergeLivePositionsFromApi(j);
     return j;
   }, []);
 
