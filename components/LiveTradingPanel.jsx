@@ -360,17 +360,42 @@ export function LiveTradingPanel() {
       setLoading(true);
       try {
         const j = await loadPositions();
-        setManual(j.manual || []);
-        setBots(j.bots || []);
+        const manualList = j.manual || [];
+        const botList = j.bots || [];
+        setManual(manualList);
+        setBots(botList);
         await loadBotsCatalog();
-        const first = (j.manual && j.manual[0]) || (j.bots && j.bots[0]);
-        if (first) {
-          if (j.manual?.[0]) {
-            setSelected(j.manual[0]);
-            setKind("manual");
-          } else {
-            setSelected(j.bots[0]);
-            setKind("bot");
+        let wantPair = null;
+        let wantBot = null;
+        if (typeof window !== "undefined") {
+          try {
+            const sp = new URLSearchParams(window.location.search);
+            wantPair = sp.get("pair");
+            wantBot = sp.get("bot") || sp.get("botId");
+          } catch {
+            wantPair = null;
+            wantBot = null;
+          }
+        }
+        const wantNorm = wantPair ? normPair(wantPair) : "";
+        const manualMatch = wantNorm ? manualList.find((m) => normPair(m.pair) === wantNorm) : null;
+        const botMatch = wantBot ? botList.find((b) => String(b.botId) === String(wantBot)) : null;
+        if (botMatch) {
+          setSelected(botMatch);
+          setKind("bot");
+        } else if (manualMatch) {
+          setSelected(manualMatch);
+          setKind("manual");
+        } else {
+          const first = manualList[0] || botList[0];
+          if (first) {
+            if (manualList[0]) {
+              setSelected(manualList[0]);
+              setKind("manual");
+            } else {
+              setSelected(botList[0]);
+              setKind("bot");
+            }
           }
         }
       } catch (e) {
@@ -1371,7 +1396,7 @@ export function LiveTradingPanel() {
                 <CardHeader>
                   <CardTitle className="text-base">Analiză AI — SL / TP</CardTitle>
                   <CardDescription>
-                    Gemini evaluează contextul pieței (OHLC) și poziția ta long spot; propune stop loss și take
+                    Modelul AI ales în Setări evaluează contextul pieței (OHLC) și poziția ta long spot; propune stop loss și take
                     profit absolut și indică 1–4 indicatori (EMA/SMA/Bollinger) afișați pe grafic, aliniați cu
                     analiza. Educațional — nu este sfat financiar. Necesită plan Pro sau Elite.
                   </CardDescription>

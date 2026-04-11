@@ -5,11 +5,18 @@ import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Bot } from "lucide-react";
+import { Bot, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 15_000;
+
+function normPair(p) {
+  return String(p ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/-/g, "/");
+}
 
 function localDayBounds() {
   const start = new Date();
@@ -19,8 +26,14 @@ function localDayBounds() {
   return { start, end };
 }
 
+function liveHrefForPair(pair) {
+  const q = encodeURIComponent(normPair(pair));
+  return `/live?pair=${q}`;
+}
+
 export function AiPilotTradesColumn() {
-  const [trades, setTrades] = useState([]);
+  const [activePilot, setActivePilot] = useState([]);
+  const [closedToday, setClosedToday] = useState([]);
   const [daySummary, setDaySummary] = useState(null);
   const [dayLabel, setDayLabel] = useState("");
   const [loading, setLoading] = useState(true);
@@ -41,15 +54,29 @@ export function AiPilotTradesColumn() {
     try {
       const paperParam = modeTab === "paper" ? "1" : "0";
       const qs = `from=${encodeURIComponent(start.toISOString())}&to=${encodeURIComponent(end.toISOString())}&isPaper=${paperParam}`;
-      const [r, rStats] = await Promise.all([
-        fetch(`/api/trades?aiPilotControl=1&limit=80&isPaper=${paperParam}`),
+      const [rPos, rTrades, rStats] = await Promise.all([
+        fetch("/api/live/positions"),
+        fetch(`/api/trades?aiPilotControl=1&limit=150&side=sell&${qs}`),
         fetch(`/api/trades/pilot-daily-stats?${qs}`),
       ]);
-      const j = await r.json();
-      if (!r.ok) {
-        throw new Error(typeof j.error === "string" ? j.error : "Eroare încărcare");
+      const jPos = await rPos.json();
+      if (!rPos.ok) {
+        throw new Error(typeof jPos.error === "string" ? jPos.error : "Eroare poziții");
       }
-      setTrades(Array.isArray(j.trades) ? j.trades : []);
+      const manual = Array.isArray(jPos.manual) ? jPos.manual : [];
+      const isPaperTab = modeTab === "paper";
+      const openPilot = manual.filter(
+        (m) => m.origin === "pilot" && Boolean(m.paper) === isPaperTab
+      );
+      setActivePilot(openPilot);
+
+      const jTr = await rTrades.json();
+      if (!rTrades.ok) {
+        throw new Error(typeof jTr.error === "string" ? jTr.error : "Eroare tranzacții");
+      }
+      const sells = Array.isArray(jTr.trades) ? jTr.trades : [];
+      sells.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setClosedToday(sells);
 
       try {
         const js = await rStats.json();
@@ -63,7 +90,8 @@ export function AiPilotTradesColumn() {
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Tranzacții pilot");
-      setTrades([]);
+      setActivePilot([]);
+      setClosedToday([]);
       setDaySummary(null);
     } finally {
       setLoading(false);
@@ -87,8 +115,8 @@ export function AiPilotTradesColumn() {
               Tranzacții AI Pilot
             </CardTitle>
             <CardDescription className="text-xs leading-relaxed">
-              Ordine manuale deschise/închise de pilot, legate de bot când există pe pereche. La „eșuat”, treci cu mouse-ul
-              peste badge pentru motivul salvat (tooltip).
+              Poziții manuale pilot încă deschise (cu legătură în Live). Vânzările / închiderile din ziua curentă
+              (ora locală 00:00–24:00) apar mai jos. La „eșuat”, treci cu mouse-ul peste badge pentru motiv.
             </CardDescription>
             <div
               className="mt-3 flex max-w-xs rounded-lg border border-border/80 bg-muted/30 p-0.5"
@@ -138,7 +166,8 @@ export function AiPilotTradesColumn() {
             </p>
             <p className="mt-0.5 text-xs capitalize leading-snug text-foreground/90">{dayLabel}</p>
             <p className="mt-1 text-[10px] text-muted-foreground">
-              Suma PnL din tranzacțiile pilot {modeTab === "paper" ? "paper" : "live"} din intervalul local 00:00–24:00.
+              Suma PnL din tranzacțiile pilot {modeTab === "paper" ? "paper" : "live"} din intervalul local 00:00–24:00
+              (inclusiv vânzările de mai jos).
             </p>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div className="rounded-lg border border-white/[0.06] bg-background/40 px-3 py-2">
@@ -149,7 +178,8 @@ export function AiPilotTradesColumn() {
                   }`}
                 >
                   {daySummary.totalPnl >= 0 ? "+" : ""}
-                  {Number(daySummary.totalPnl).toFixed(4)} <span className="text-xs font-normal text-muted-foreground">USDC</span>
+                  {Number(daySummary.totalPnl).toFixed(4)}{" "}
+                  <span className="text-xs font-normal text-muted-foreground">USDC</span>
                 </p>
               </div>
               <div className="rounded-lg border border-white/[0.06] bg-background/40 px-3 py-2">
@@ -174,100 +204,160 @@ export function AiPilotTradesColumn() {
         )}
         {loading ? (
           <p className="p-4 text-sm text-muted-foreground">Se încarcă…</p>
-        ) : trades.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">
-            {modeTab === "paper"
-              ? "Încă nu există tranzacții pilot în modul paper pentru filtrul curent."
-              : "Încă nu există tranzacții pilot live (real). Verifică modul „Real” la ordine în setările pilot sau cron-ul."}
-          </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[320px] text-left text-xs">
-              <thead>
-                <tr className="border-b border-border/80 bg-white/[0.02] text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <th className="px-3 py-2">Data</th>
-                  <th className="px-2 py-2">Pereche</th>
-                  <th className="px-2 py-2">Op</th>
-                  <th className="px-2 py-2 text-right">PnL</th>
-                  <th className="px-3 py-2">Detalii</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trades.map((t) => {
-                  const pnl = t.pnl != null ? Number(t.pnl) : null;
-                  const botId = t.botId ? String(t.botId) : null;
-                  return (
-                    <tr key={t._id} className="border-b border-border/50 transition-colors hover:bg-white/[0.03]">
-                      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-                        {new Date(t.createdAt).toLocaleString("ro-RO", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </td>
-                      <td className="px-2 py-2 font-medium">{t.pair}</td>
-                      <td className="px-2 py-2">
-                        <span
-                          className={
-                            t.side === "buy"
-                              ? "font-medium text-emerald-400"
-                              : "font-medium text-amber-400/90"
-                          }
-                        >
-                          {t.side}
-                        </span>
-                      </td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums">
-                        {pnl != null && Number.isFinite(pnl) ? (
-                          <span className={pnl >= 0 ? "text-emerald-400" : "text-rose-400"}>
-                            {pnl >= 0 ? "+" : ""}
-                            {pnl.toFixed(2)}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex flex-wrap items-center gap-1">
-                          {t.isPaper ? (
-                            <Badge variant="outline" className="text-[10px]">
-                              paper
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="text-[10px]">
-                              live
-                            </Badge>
-                          )}
-                          {t.status === "failed" && (
-                            <span
-                              className="inline-flex cursor-help"
-                              title={
-                                String(t.errorMessage || "").trim() ||
-                                "Motiv indisponibil — verifică logurile serverului."
-                              }
-                            >
-                              <Badge variant="destructive" className="pointer-events-none text-[10px]">
-                                eșuat
-                              </Badge>
-                            </span>
-                          )}
-                          {botId ? (
+          <div className="space-y-6 p-4">
+            <section>
+              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Poziții active (pilot)
+              </h3>
+              {activePilot.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nicio poziție manuală deschisă marcată pilot în modul {modeTab === "paper" ? "paper" : "live"}.
+                </p>
+              ) : (
+                <div className="overflow-x-auto rounded-md border border-border/60">
+                  <table className="w-full min-w-[280px] text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-border/80 bg-white/[0.02] text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <th className="px-3 py-2">Pereche</th>
+                        <th className="px-2 py-2 text-right">Cant.</th>
+                        <th className="px-2 py-2 text-right">Intrare</th>
+                        <th className="px-2 py-2 text-right">Mark</th>
+                        <th className="px-3 py-2">Live</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activePilot.map((m) => (
+                        <tr key={m.pair} className="border-b border-border/50 transition-colors hover:bg-white/[0.03]">
+                          <td className="px-3 py-2 font-medium">{m.pair}</td>
+                          <td className="px-2 py-2 text-right font-mono tabular-nums">
+                            {Number(m.qty).toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                          </td>
+                          <td className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                            {m.avgEntry != null && Number.isFinite(Number(m.avgEntry))
+                              ? Number(m.avgEntry).toLocaleString(undefined, { maximumFractionDigits: 4 })
+                              : "—"}
+                          </td>
+                          <td className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                            {m.markPrice != null && Number.isFinite(Number(m.markPrice))
+                              ? Number(m.markPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })
+                              : "—"}
+                          </td>
+                          <td className="px-3 py-2">
                             <Link
-                              href="/bots"
-                              title={`Bot ${botId}`}
-                              className="max-w-[5.5rem] truncate text-[10px] text-primary underline-offset-2 hover:underline"
+                              href={liveHrefForPair(m.pair)}
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-primary underline-offset-2 hover:underline"
                             >
-                              bot…{botId.slice(-6)}
+                              Deschide în Live
+                              <ExternalLink className="h-3 w-3 opacity-80" aria-hidden />
                             </Link>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            <section>
+              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Închideri astăzi (vânzări)
+              </h3>
+              {closedToday.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nicio vânzare pilot în ziua curentă ({modeTab === "paper" ? "paper" : "live"}).
+                </p>
+              ) : (
+                <div className="overflow-x-auto rounded-md border border-border/60">
+                  <table className="w-full min-w-[320px] text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-border/80 bg-white/[0.02] text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <th className="px-3 py-2">Ora</th>
+                        <th className="px-2 py-2">Pereche</th>
+                        <th className="px-2 py-2 text-right">PnL</th>
+                        <th className="px-3 py-2">Detalii</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {closedToday.map((t) => {
+                        const pnl = t.pnl != null ? Number(t.pnl) : null;
+                        const botId = t.botId ? String(t.botId) : null;
+                        return (
+                          <tr key={t._id} className="border-b border-border/50 transition-colors hover:bg-white/[0.03]">
+                            <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                              {new Date(t.createdAt).toLocaleString("ro-RO", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </td>
+                            <td className="px-2 py-2">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="font-medium">{t.pair}</span>
+                                <Link
+                                  href={liveHrefForPair(t.pair)}
+                                  className="inline-flex w-fit items-center gap-0.5 text-[10px] text-primary underline-offset-2 hover:underline"
+                                >
+                                  Live
+                                  <ExternalLink className="h-2.5 w-2.5" aria-hidden />
+                                </Link>
+                              </div>
+                            </td>
+                            <td className="px-2 py-2 text-right font-mono tabular-nums">
+                              {pnl != null && Number.isFinite(pnl) ? (
+                                <span className={pnl >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                                  {pnl >= 0 ? "+" : ""}
+                                  {pnl.toFixed(2)}
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex flex-wrap items-center gap-1">
+                                {t.isPaper ? (
+                                  <Badge variant="outline" className="text-[10px]">
+                                    paper
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="secondary" className="text-[10px]">
+                                    live
+                                  </Badge>
+                                )}
+                                {t.status === "failed" && (
+                                  <span
+                                    className="inline-flex cursor-help"
+                                    title={
+                                      String(t.errorMessage || "").trim() ||
+                                      "Motiv indisponibil — verifică logurile serverului."
+                                    }
+                                  >
+                                    <Badge variant="destructive" className="pointer-events-none text-[10px]">
+                                      eșuat
+                                    </Badge>
+                                  </span>
+                                )}
+                                {botId ? (
+                                  <Link
+                                    href="/bots"
+                                    title={`Bot ${botId}`}
+                                    className="max-w-[5.5rem] truncate text-[10px] text-primary underline-offset-2 hover:underline"
+                                  >
+                                    bot…{botId.slice(-6)}
+                                  </Link>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           </div>
         )}
       </CardContent>

@@ -33,6 +33,21 @@ const UserSchema = new mongoose.Schema(
     manualPaperQuoteBalance: { type: Number, default: 10000 },
     /** @deprecated folosește manualPaperQuoteBalance; păstrat pentru migrare */
     manualPaperUsdt: { type: Number },
+    /** Furnizor AI + mod agentic; cheile proprii sunt criptate AES-GCM (același ENCRYPTION_KEY ca Binance). */
+    aiSettings: {
+      provider: { type: String, enum: ["gemini", "claude", "ollama"], default: "gemini" },
+      /** Claude: raționament extins în system prompt (nu e agent cu tool-use Anthropic). */
+      claudeAgentic: { type: Boolean, default: false },
+    },
+    /** BYOK Gemini — câmp gol = folosește GEMINI_API_KEY din env (dacă există). */
+    aiGeminiApiKeyEncrypted: { type: String, default: "" },
+    aiGeminiModel: { type: String, default: "" },
+    /** BYOK Anthropic — câmp gol = folosește ANTHROPIC_API_KEY din env. */
+    aiAnthropicApiKeyEncrypted: { type: String, default: "" },
+    aiAnthropicModel: { type: String, default: "" },
+    /** Ollama: URL API (ex. http://localhost:11434) — text clar; modelul tot în clar. */
+    aiOllamaBaseUrl: { type: String, default: "" },
+    aiOllamaModel: { type: String, default: "" },
     /**
      * Pilot AI: analiză periodică, activare/pauză boti, închidere poziții la semnal.
      * botIds = subset din botii userului; maxUsdcPerTrade plafonează suma la ordin buy real.
@@ -55,6 +70,12 @@ const UserSchema = new mongoose.Schema(
       lastRunAt: { type: Date, default: null },
       lastSummary: { type: String, default: "" },
       lastError: { type: String, default: "" },
+      /** Cron separat: verifică poziții manuale Live și poate propune vânzări (mod real). */
+      manualLiveAiEnabled: { type: Boolean, default: false },
+      manualLiveIntervalMinutes: { type: Number, default: 5 },
+      lastManualLiveRunAt: { type: Date, default: null },
+      lastManualLiveSummary: { type: String, default: "" },
+      lastManualLiveError: { type: String, default: "" },
     },
   },
   { timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" } }

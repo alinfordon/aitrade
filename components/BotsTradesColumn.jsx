@@ -1,17 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
-import { Bot } from "lucide-react";
+import { Bot, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 15_000;
-/** Max rânduri în tabel; API sortează descendent după dată → mereu cele mai noi primele. */
-const TRADES_LIMIT = 50;
+const SELLS_LIMIT = 150;
 
 function localDayBounds() {
   const start = new Date();
@@ -26,9 +26,14 @@ function fmtUsdc(n) {
   return `${Number(n).toFixed(2)} USDC`;
 }
 
+function liveHrefForBot(botId) {
+  return `/live?bot=${encodeURIComponent(String(botId))}`;
+}
+
 export function BotsTradesColumn() {
   const { wallet, loadWallet } = useSpotWallet();
-  const [trades, setTrades] = useState([]);
+  const [activeBots, setActiveBots] = useState([]);
+  const [closedToday, setClosedToday] = useState([]);
   const [daySummary, setDaySummary] = useState(null);
   const [dayLabel, setDayLabel] = useState("");
   const [loading, setLoading] = useState(true);
@@ -49,16 +54,28 @@ export function BotsTradesColumn() {
     try {
       const paperParam = modeTab === "paper" ? "1" : "0";
       const qs = `from=${encodeURIComponent(start.toISOString())}&to=${encodeURIComponent(end.toISOString())}&isPaper=${paperParam}`;
-      const [r, rStats] = await Promise.all([
-        fetch(`/api/trades?anyBot=1&limit=${TRADES_LIMIT}&isPaper=${paperParam}`),
+      const [rPos, rTrades, rStats] = await Promise.all([
+        fetch("/api/live/positions"),
+        fetch(`/api/trades?anyBot=1&limit=${SELLS_LIMIT}&side=sell&${qs}`),
         fetch(`/api/trades/bot-daily-stats?${qs}`),
-        loadWallet({ silent: true }),
       ]);
-      const j = await r.json();
-      if (!r.ok) {
-        throw new Error(typeof j.error === "string" ? j.error : "Eroare încărcare");
+      void loadWallet({ silent: true });
+      const jPos = await rPos.json();
+      if (!rPos.ok) {
+        throw new Error(typeof jPos.error === "string" ? jPos.error : "Eroare poziții");
       }
-      setTrades(Array.isArray(j.trades) ? j.trades : []);
+      const botRows = Array.isArray(jPos.bots) ? jPos.bots : [];
+      const isPaperTab = modeTab === "paper";
+      const openBots = botRows.filter((b) => (b.botMode === "paper") === isPaperTab);
+      setActiveBots(openBots);
+
+      const jTr = await rTrades.json();
+      if (!rTrades.ok) {
+        throw new Error(typeof jTr.error === "string" ? jTr.error : "Eroare tranzacții");
+      }
+      const sells = Array.isArray(jTr.trades) ? jTr.trades : [];
+      sells.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setClosedToday(sells);
 
       try {
         const js = await rStats.json();
@@ -72,7 +89,8 @@ export function BotsTradesColumn() {
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Tranzacții boți");
-      setTrades([]);
+      setActiveBots([]);
+      setClosedToday([]);
       setDaySummary(null);
     } finally {
       setLoading(false);
@@ -96,7 +114,8 @@ export function BotsTradesColumn() {
               Tranzacții boți
             </CardTitle>
             <CardDescription className="text-xs leading-relaxed">
-              Ordine de la motorul de strategie (cron) și cele legate de un anumit bot (inclusiv manual pilot).
+              Poziții deschise la boți (cu legătură în Live). Vânzările asociate unui bot din ziua curentă (ora locală
+              00:00–24:00), inclusiv închideri din cron sau manual legat de bot.
             </CardDescription>
             <div
               className="mt-3 flex max-w-xs rounded-lg border border-border/80 bg-muted/30 p-0.5"
@@ -222,7 +241,8 @@ export function BotsTradesColumn() {
             </p>
             <p className="mt-0.5 text-xs capitalize leading-snug text-foreground/90">{dayLabel}</p>
             <p className="mt-1 text-[10px] text-muted-foreground">
-              Suma PnL din tranzacțiile cu botId ({modeTab === "paper" ? "paper" : "live"}) în intervalul local 00:00–24:00.
+              Suma PnL din tranzacțiile cu botId ({modeTab === "paper" ? "paper" : "live"}) în intervalul local 00:00–24:00
+              (inclusiv vânzările de mai jos).
             </p>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div className="rounded-lg border border-white/[0.06] bg-background/40 px-3 py-2">
@@ -259,98 +279,188 @@ export function BotsTradesColumn() {
         )}
         {loading ? (
           <p className="p-4 text-sm text-muted-foreground">Se încarcă…</p>
-        ) : trades.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">
-            {modeTab === "paper"
-              ? "Încă nu există tranzacții paper asociate boților pentru filtrul curent."
-              : "Încă nu există tranzacții live asociate boților. Pornește un bot în mod real și lasă cron-ul să ruleze sau leagă tranzacții manuale de un bot pe aceeași pereche."}
-          </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[320px] text-left text-xs">
-              <thead>
-                <tr className="border-b border-border/80 bg-white/[0.02] text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <th className="px-3 py-2">Data</th>
-                  <th className="px-2 py-2">Pereche</th>
-                  <th className="px-2 py-2">Op</th>
-                  <th className="px-2 py-2 text-right">PnL</th>
-                  <th className="px-3 py-2">Detalii</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trades.map((t) => {
-                  const pnl = t.pnl != null ? Number(t.pnl) : null;
-                  const botId = t.botId ? String(t.botId) : null;
-                  const pilotTag = t.meta && typeof t.meta === "object" && t.meta.aiPilotControl;
-                  const motor = t.tradeSource === "bot";
-                  return (
-                    <tr key={t._id} className="border-b border-border/50 transition-colors hover:bg-white/[0.03]">
-                      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-                        {new Date(t.createdAt).toLocaleString("ro-RO", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </td>
-                      <td className="px-2 py-2 font-medium">{t.pair}</td>
-                      <td className="px-2 py-2">
-                        <span
-                          className={
-                            t.side === "buy" ? "font-medium text-emerald-400" : "font-medium text-amber-400/90"
-                          }
-                        >
-                          {t.side}
-                        </span>
-                      </td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums">
-                        {pnl != null && Number.isFinite(pnl) ? (
-                          <span className={pnl >= 0 ? "text-emerald-400" : "text-rose-400"}>
-                            {pnl >= 0 ? "+" : ""}
-                            {pnl.toFixed(2)}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex flex-wrap items-center gap-1">
-                          {motor ? (
-                            <Badge variant="outline" className="text-[10px] text-sky-200/90">
-                              cron
-                            </Badge>
-                          ) : null}
-                          {pilotTag ? (
-                            <Badge variant="outline" className="border-amber-500/35 text-[10px] text-amber-200">
-                              Pilot
-                            </Badge>
-                          ) : null}
-                          {t.isPaper ? (
-                            <Badge variant="outline" className="text-[10px]">
-                              paper
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="text-[10px]">
-                              live
-                            </Badge>
-                          )}
-                          {t.status === "failed" && (
-                            <Badge variant="destructive" className="text-[10px]">
-                              eșuat
-                            </Badge>
-                          )}
-                          {botId ? (
-                            <span title={botId} className="max-w-[5.5rem] truncate font-mono text-[10px] text-primary/90">
-                              …{botId.slice(-6)}
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="space-y-6 p-4">
+            <section>
+              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Poziții active (boți)
+              </h3>
+              {activeBots.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Niciun bot cu poziție deschisă în modul {modeTab === "paper" ? "paper" : "live"}.
+                </p>
+              ) : (
+                <div className="overflow-x-auto rounded-md border border-border/60">
+                  <table className="w-full min-w-[300px] text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-border/80 bg-white/[0.02] text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <th className="px-3 py-2">Strategie / pereche</th>
+                        <th className="px-2 py-2 text-right">Cant.</th>
+                        <th className="px-2 py-2 text-right">Intrare</th>
+                        <th className="px-2 py-2 text-right">Mark</th>
+                        <th className="px-3 py-2">Live</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeBots.map((b) => (
+                        <tr key={b.botId} className="border-b border-border/50 transition-colors hover:bg-white/[0.03]">
+                          <td className="px-3 py-2">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="line-clamp-2 font-medium leading-tight">{b.strategyName || "—"}</span>
+                              <span className="text-[10px] text-muted-foreground">{b.pair}</span>
+                              <div className="flex flex-wrap gap-1 pt-0.5">
+                                {b.origin === "pilot" ? (
+                                  <Badge variant="outline" className="border-amber-500/35 text-[9px] text-amber-200">
+                                    Pilot
+                                  </Badge>
+                                ) : null}
+                                {b.futuresEnabled ? (
+                                  <Badge variant="outline" className="text-[9px]">
+                                    futures
+                                  </Badge>
+                                ) : null}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-2 py-2 text-right font-mono tabular-nums">
+                            {Number(b.qty).toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                          </td>
+                          <td className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                            {b.avgEntry != null && Number.isFinite(Number(b.avgEntry))
+                              ? Number(b.avgEntry).toLocaleString(undefined, { maximumFractionDigits: 4 })
+                              : "—"}
+                          </td>
+                          <td className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                            {b.markPrice != null && Number.isFinite(Number(b.markPrice))
+                              ? Number(b.markPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })
+                              : "—"}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Link
+                              href={liveHrefForBot(b.botId)}
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-primary underline-offset-2 hover:underline"
+                            >
+                              Deschide în Live
+                              <ExternalLink className="h-3 w-3 opacity-80" aria-hidden />
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            <section>
+              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Închideri astăzi (vânzări)
+              </h3>
+              {closedToday.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nicio vânzare asociată boților în ziua curentă ({modeTab === "paper" ? "paper" : "live"}).
+                </p>
+              ) : (
+                <div className="overflow-x-auto rounded-md border border-border/60">
+                  <table className="w-full min-w-[320px] text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-border/80 bg-white/[0.02] text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <th className="px-3 py-2">Ora</th>
+                        <th className="px-2 py-2">Pereche</th>
+                        <th className="px-2 py-2 text-right">PnL</th>
+                        <th className="px-3 py-2">Detalii</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {closedToday.map((t) => {
+                        const pnl = t.pnl != null ? Number(t.pnl) : null;
+                        const botId = t.botId ? String(t.botId) : null;
+                        const pilotTag = t.meta && typeof t.meta === "object" && t.meta.aiPilotControl;
+                        const motor = t.tradeSource === "bot";
+                        const liveBot = botId ? liveHrefForBot(botId) : "/live";
+                        return (
+                          <tr key={t._id} className="border-b border-border/50 transition-colors hover:bg-white/[0.03]">
+                            <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                              {new Date(t.createdAt).toLocaleString("ro-RO", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </td>
+                            <td className="px-2 py-2">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="font-medium">{t.pair}</span>
+                                {botId ? (
+                                  <Link
+                                    href={liveBot}
+                                    className="inline-flex w-fit items-center gap-0.5 text-[10px] text-primary underline-offset-2 hover:underline"
+                                  >
+                                    Live
+                                    <ExternalLink className="h-2.5 w-2.5" aria-hidden />
+                                  </Link>
+                                ) : null}
+                              </div>
+                            </td>
+                            <td className="px-2 py-2 text-right font-mono tabular-nums">
+                              {pnl != null && Number.isFinite(pnl) ? (
+                                <span className={pnl >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                                  {pnl >= 0 ? "+" : ""}
+                                  {pnl.toFixed(2)}
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex flex-wrap items-center gap-1">
+                                {motor ? (
+                                  <Badge variant="outline" className="text-[10px] text-sky-200/90">
+                                    cron
+                                  </Badge>
+                                ) : null}
+                                {pilotTag ? (
+                                  <Badge variant="outline" className="border-amber-500/35 text-[10px] text-amber-200">
+                                    Pilot
+                                  </Badge>
+                                ) : null}
+                                {t.isPaper ? (
+                                  <Badge variant="outline" className="text-[10px]">
+                                    paper
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="secondary" className="text-[10px]">
+                                    live
+                                  </Badge>
+                                )}
+                                {t.status === "failed" && (
+                                  <span
+                                    className="inline-flex cursor-help"
+                                    title={
+                                      String(t.errorMessage || "").trim() ||
+                                      "Motiv indisponibil — verifică logurile serverului."
+                                    }
+                                  >
+                                    <Badge variant="destructive" className="pointer-events-none text-[10px]">
+                                      eșuat
+                                    </Badge>
+                                  </span>
+                                )}
+                                {botId ? (
+                                  <span title={botId} className="max-w-[5.5rem] truncate font-mono text-[10px] text-primary/90">
+                                    …{botId.slice(-6)}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           </div>
         )}
       </CardContent>

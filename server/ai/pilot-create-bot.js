@@ -1,12 +1,14 @@
 import { connectDB } from "@/models/db";
 import { Bot, Strategy } from "@/models";
+import User from "@/models/User";
+import { buildAiRuntime } from "@/lib/ai/ai-preferences";
 import { maxBotsForPlan } from "@/lib/plans";
 import { generateStrategyFromUserGoal } from "@/lib/ai/strategy-from-prompt";
 import { tryActivateBot } from "@/server/bots/try-activate-bot";
 import { evictPilotBotsForNewCreation } from "@/server/ai/pilot-evict-bots";
 
 /**
- * Generează strategie (Gemini) și creează bot asociat. Perechea trebuie să fie liberă (fără alt bot user).
+ * Generează strategie (model AI din setările utilizatorului) și creează bot asociat. Perechea trebuie să fie liberă.
  * @param {{
  *   userId: string,
  *   subscriptionPlan: string,
@@ -37,6 +39,13 @@ export async function createPilotStrategyAndBot(args) {
   await connectDB();
   const max = maxBotsForPlan(subscriptionPlan);
 
+  const userLean = await User.findById(userId)
+    .select(
+      "aiSettings aiGeminiApiKeyEncrypted aiGeminiModel aiAnthropicApiKeyEncrypted aiAnthropicModel aiOllamaBaseUrl aiOllamaModel"
+    )
+    .lean();
+  const aiRuntime = buildAiRuntime(userLean);
+
   const taken = await Bot.findOne({ userId, pair }).select("_id").lean();
   if (taken) {
     return { ok: false, error: "A bot already exists for this pair.", status: 409 };
@@ -48,6 +57,7 @@ export async function createPilotStrategyAndBot(args) {
       goal,
       pair,
       riskStyle,
+      aiRuntime,
     });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e), status: 400 };

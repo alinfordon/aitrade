@@ -63,6 +63,13 @@ export async function GET() {
       lastRunAt: pilot.lastRunAt ? new Date(pilot.lastRunAt).toISOString() : null,
       lastSummary: String(pilot.lastSummary || ""),
       lastError: String(pilot.lastError || ""),
+      manualLiveAiEnabled: Boolean(pilot.manualLiveAiEnabled),
+      manualLiveIntervalMinutes: Math.min(30, Math.max(2, Number(pilot.manualLiveIntervalMinutes) || 5)),
+      lastManualLiveRunAt: pilot.lastManualLiveRunAt
+        ? new Date(pilot.lastManualLiveRunAt).toISOString()
+        : null,
+      lastManualLiveSummary: String(pilot.lastManualLiveSummary || ""),
+      lastManualLiveError: String(pilot.lastManualLiveError || ""),
     },
     bots: bots.map((b) => ({
       id: String(b._id),
@@ -136,6 +143,10 @@ export async function PATCH(request) {
   if (patch.maxTradesPerRun != null) $set["aiPilot.maxTradesPerRun"] = patch.maxTradesPerRun;
   if (patch.maxOpenManualPositions != null) $set["aiPilot.maxOpenManualPositions"] = patch.maxOpenManualPositions;
   if (patch.maxPilotBots != null) $set["aiPilot.maxPilotBots"] = patch.maxPilotBots;
+  if (patch.manualLiveAiEnabled != null) $set["aiPilot.manualLiveAiEnabled"] = patch.manualLiveAiEnabled;
+  if (patch.manualLiveIntervalMinutes != null) {
+    $set["aiPilot.manualLiveIntervalMinutes"] = patch.manualLiveIntervalMinutes;
+  }
 
   const user = await User.findByIdAndUpdate(session.userId, { $set }, { new: true });
   if (!user) {
@@ -157,6 +168,8 @@ export async function PATCH(request) {
       maxTradesPerRun: Math.min(20, Math.max(1, Number(ap.maxTradesPerRun) || 3)),
       maxOpenManualPositions: Math.min(20, Math.max(1, Number(ap.maxOpenManualPositions) || 3)),
       maxPilotBots: Math.min(20, Math.max(1, Number(ap.maxPilotBots) || 5)),
+      manualLiveAiEnabled: Boolean(ap.manualLiveAiEnabled),
+      manualLiveIntervalMinutes: Math.min(30, Math.max(2, Number(ap.manualLiveIntervalMinutes) || 5)),
     },
   });
 }

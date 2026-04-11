@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-/** Ultimele execuții reușite / eșuate ale job-urilor HTTP cron (run-bots, ai-pilot, ai-optimize). */
+/** Ultimele execuții reușite / eșuate ale job-urilor HTTP cron (run-bots, ai-pilot, ai-pilot-manual-live, ai-optimize). */
 const CronRunLogSchema = new mongoose.Schema(
   {
     job: { type: String, required: true, index: true },

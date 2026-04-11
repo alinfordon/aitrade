@@ -98,6 +98,7 @@ const SOURCE_RO = {
 const CRON_JOB_LABEL = {
   "run-bots": "Run bots",
   "ai-pilot": "AI Pilot",
+  "ai-pilot-manual-live": "AI Pilot · Live manual",
   "ai-optimize": "AI Optimize",
 };
 
@@ -110,6 +111,10 @@ function cronRunSummaryLine(job, summary) {
   if (job === "ai-pilot") {
     const u = summary.batchUsers ?? (Array.isArray(summary.items) ? summary.items.length : 0);
     return `${u} utilizatori în batch`;
+  }
+  if (job === "ai-pilot-manual-live") {
+    const u = summary.batchUsers ?? (Array.isArray(summary.items) ? summary.items.length : 0);
+    return `${u} utilizatori · verificare Live manual`;
   }
   if (job === "ai-optimize") {
     const t = summary.elitesTried ?? (Array.isArray(summary.items) ? summary.items.length : 0);

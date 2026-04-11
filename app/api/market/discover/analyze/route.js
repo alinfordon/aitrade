@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-helpers";
 import { rateLimit } from "@/lib/redis/rate-limit";
+import { connectDB } from "@/models/db";
+import User from "@/models/User";
 import { fetchBinanceUsdcGainers, fetchCoinGeckoTrending } from "@/lib/market/discover-data";
 import { runMarketAiAnalysis } from "@/lib/ai/market-analyze";
+import { buildAiRuntime, missingProviderKeyMessage, isAiProviderConfigured } from "@/lib/ai/ai-preferences";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -22,11 +25,15 @@ export async function POST() {
     );
   }
 
-  if (!process.env.GEMINI_API_KEY?.trim()) {
-    return NextResponse.json(
-      { error: "AI neconfigurat: setează GEMINI_API_KEY în .env.local." },
-      { status: 503 }
-    );
+  await connectDB();
+  const user = await User.findById(session.userId)
+    .select(
+      "aiSettings aiGeminiApiKeyEncrypted aiGeminiModel aiAnthropicApiKeyEncrypted aiAnthropicModel aiOllamaBaseUrl aiOllamaModel"
+    )
+    .lean();
+  const aiRuntime = buildAiRuntime(user);
+  if (!isAiProviderConfigured(user)) {
+    return NextResponse.json({ error: missingProviderKeyMessage(aiRuntime.provider) }, { status: 503 });
   }
 
   let gainers = [];
@@ -44,7 +51,7 @@ export async function POST() {
   }
 
   try {
-    const analysis = await runMarketAiAnalysis({ gainers, trending });
+    const analysis = await runMarketAiAnalysis({ gainers, trending, aiRuntime });
     return NextResponse.json({
       analysis,
       meta: {

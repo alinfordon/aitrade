@@ -21,10 +21,15 @@ export function AiPilotPanel() {
   const [pilotMaxTradesRun, setPilotMaxTradesRun] = useState(3);
   const [pilotMaxManualOpen, setPilotMaxManualOpen] = useState(3);
   const [pilotMaxPilotBots, setPilotMaxPilotBots] = useState(5);
+  const [pilotManualLiveAi, setPilotManualLiveAi] = useState(false);
+  const [pilotManualLiveInterval, setPilotManualLiveInterval] = useState(5);
   const [pilotSelected, setPilotSelected] = useState(() => new Set());
   const [pilotLastSummary, setPilotLastSummary] = useState("");
   const [pilotLastError, setPilotLastError] = useState("");
   const [pilotLastRun, setPilotLastRun] = useState(null);
+  const [pilotLastManualLiveRun, setPilotLastManualLiveRun] = useState(null);
+  const [pilotLastManualLiveSummary, setPilotLastManualLiveSummary] = useState("");
+  const [pilotLastManualLiveError, setPilotLastManualLiveError] = useState("");
 
   const loadPilot = useCallback(async () => {
     setPilotLoading(true);
@@ -45,9 +50,14 @@ export function AiPilotPanel() {
       setPilotMaxTradesRun(Math.min(20, Math.max(1, Number(s.maxTradesPerRun) || 3)));
       setPilotMaxManualOpen(Math.min(20, Math.max(1, Number(s.maxOpenManualPositions) || 3)));
       setPilotMaxPilotBots(Math.min(20, Math.max(1, Number(s.maxPilotBots) || 5)));
+      setPilotManualLiveAi(Boolean(s.manualLiveAiEnabled));
+      setPilotManualLiveInterval(Math.min(30, Math.max(2, Number(s.manualLiveIntervalMinutes) || 5)));
       setPilotLastSummary(String(s.lastSummary || ""));
       setPilotLastError(String(s.lastError || ""));
       setPilotLastRun(s.lastRunAt || null);
+      setPilotLastManualLiveRun(s.lastManualLiveRunAt || null);
+      setPilotLastManualLiveSummary(String(s.lastManualLiveSummary || ""));
+      setPilotLastManualLiveError(String(s.lastManualLiveError || ""));
       setPilotSelected(new Set((s.botIds || []).map(String)));
       setPilotBots(Array.isArray(j.bots) ? j.bots : []);
     } catch (e) {
@@ -91,6 +101,8 @@ export function AiPilotPanel() {
           maxTradesPerRun: pilotMaxTradesRun,
           maxOpenManualPositions: pilotMaxManualOpen,
           maxPilotBots: pilotMaxPilotBots,
+          manualLiveAiEnabled: pilotManualLiveAi,
+          manualLiveIntervalMinutes: pilotManualLiveInterval,
           botIds: botIdsPayload,
         }),
       });
@@ -118,8 +130,11 @@ export function AiPilotPanel() {
           poziții în{" "}
           <strong className="font-medium text-foreground">manual spot</strong> (cartea Live), poate crea{" "}
           <strong className="font-medium text-foreground">strategie + bot nou</strong> din analiză. Limitezi
-          acțiunile pe rundă (cumpărări/vânzări manuale + creare bot) și perechile manuale maxime deschise. Cron:{" "}
-          <code className="rounded bg-muted px-1 py-0.5 text-xs">/api/cron/ai-pilot</code> +{" "}
+          acțiunile pe rundă (cumpărări/vânzări manuale + creare bot) și perechile manuale maxime deschise.           Cron principal:{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-xs">/api/cron/ai-pilot</code>
+          {" · "}
+          cron Live manual (vânzări):{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-xs">/api/cron/ai-pilot-manual-live</code> +{" "}
           <code className="rounded bg-muted px-1 py-0.5 text-xs">CRON_SECRET</code>. Nu este sfat financiar.
         </CardDescription>
       </CardHeader>
@@ -159,6 +174,32 @@ export function AiPilotPanel() {
               />
               Tranzacții manuale (cartea spot / Live) orchestrate de pilot
             </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={pilotManualLiveAi}
+                onChange={(e) => setPilotManualLiveAi(e.target.checked)}
+                disabled={!pilotManual || pilotOrderMode !== "real"}
+                className="h-4 w-4 rounded border-input disabled:opacity-50"
+              />
+              Verificare AI separată pentru poziții manuale Live (doar vânzări, la interval mai scurt)
+            </label>
+            <div className="space-y-2">
+              <Label>Interval verificare Live manual (minute)</Label>
+              <Input
+                type="number"
+                min={2}
+                max={30}
+                disabled={!pilotManualLiveAi || pilotOrderMode !== "real"}
+                value={pilotManualLiveInterval}
+                onChange={(e) => setPilotManualLiveInterval(Number(e.target.value))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Necesită mod ordine Real, tranzacții manuale activate și cron{" "}
+                <code className="rounded bg-muted px-1 py-0.5 text-[11px]">ai-pilot-manual-live</code>. Nu
+                consumă din plafonul „max acțiuni / rundă” al pilotului principal.
+              </p>
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -265,26 +306,49 @@ export function AiPilotPanel() {
             </Button>
           </form>
         )}
-        {!pilotLoading && pilotCanUse && (pilotLastRun || pilotLastSummary || pilotLastError) && (
-          <div className="max-w-lg space-y-2 rounded-md border border-border/60 bg-muted/30 p-3 text-xs">
-            {pilotLastRun && (
-              <p>
-                <span className="font-medium">Ultima rundă:</span>{" "}
-                {new Date(pilotLastRun).toLocaleString("ro-RO")}
-              </p>
-            )}
-            {pilotLastSummary && (
-              <p>
-                <span className="font-medium">Rezumat:</span> {pilotLastSummary}
-              </p>
-            )}
-            {pilotLastError && (
-              <p className="text-destructive">
-                <span className="font-medium">Eroare:</span> {pilotLastError}
-              </p>
-            )}
-          </div>
-        )}
+        {!pilotLoading &&
+          pilotCanUse &&
+          (pilotLastRun ||
+            pilotLastSummary ||
+            pilotLastError ||
+            pilotLastManualLiveRun ||
+            pilotLastManualLiveSummary ||
+            pilotLastManualLiveError) && (
+            <div className="max-w-lg space-y-2 rounded-md border border-border/60 bg-muted/30 p-3 text-xs">
+              {pilotLastRun && (
+                <p>
+                  <span className="font-medium">Ultima rundă pilot:</span>{" "}
+                  {new Date(pilotLastRun).toLocaleString("ro-RO")}
+                </p>
+              )}
+              {pilotLastSummary && (
+                <p>
+                  <span className="font-medium">Rezumat pilot:</span> {pilotLastSummary}
+                </p>
+              )}
+              {pilotLastError && (
+                <p className="text-destructive">
+                  <span className="font-medium">Eroare pilot:</span> {pilotLastError}
+                </p>
+              )}
+              {pilotLastManualLiveRun && (
+                <p>
+                  <span className="font-medium">Ultima verificare Live manual:</span>{" "}
+                  {new Date(pilotLastManualLiveRun).toLocaleString("ro-RO")}
+                </p>
+              )}
+              {pilotLastManualLiveSummary && (
+                <p>
+                  <span className="font-medium">Rezumat Live manual:</span> {pilotLastManualLiveSummary}
+                </p>
+              )}
+              {pilotLastManualLiveError && (
+                <p className="text-destructive">
+                  <span className="font-medium">Eroare Live manual:</span> {pilotLastManualLiveError}
+                </p>
+              )}
+            </div>
+          )}
       </CardContent>
     </Card>
   );

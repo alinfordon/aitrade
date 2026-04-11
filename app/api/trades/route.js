@@ -19,6 +19,9 @@ export async function GET(request) {
   /** Toate tranzacțiile cu botId setat (motor cron + manual pilot legat de bot). */
   const anyBot = searchParams.get("anyBot") === "1";
   const isPaperRaw = searchParams.get("isPaper");
+  const sideRaw = searchParams.get("side");
+  const fromRaw = searchParams.get("from");
+  const toRaw = searchParams.get("to");
 
   await connectDB();
   const filter = { userId: session.userId };
@@ -38,6 +41,21 @@ export async function GET(request) {
   }
   if (tradeSourceRaw === "manual" || tradeSourceRaw === "bot" || tradeSourceRaw === "copy") {
     filter.tradeSource = tradeSourceRaw;
+  }
+  if (sideRaw === "buy" || sideRaw === "sell") {
+    filter.side = sideRaw;
+  }
+  if (fromRaw || toRaw) {
+    const range = {};
+    if (fromRaw) {
+      const d = new Date(fromRaw);
+      if (!Number.isNaN(d.getTime())) range.$gte = d;
+    }
+    if (toRaw) {
+      const d = new Date(toRaw);
+      if (!Number.isNaN(d.getTime())) range.$lt = d;
+    }
+    if (Object.keys(range).length) filter.createdAt = range;
   }
   if (botIdRaw) {
     if (!mongoose.Types.ObjectId.isValid(botIdRaw)) {

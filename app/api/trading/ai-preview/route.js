@@ -9,6 +9,7 @@ import { canUsePreTradeAiAnalysis } from "@/lib/plans";
 import { rateLimit } from "@/lib/redis/rate-limit";
 import { getPrice } from "@/lib/binance/service";
 import { runTradingPreTradeAnalysis } from "@/lib/ai/trading-preact-analyze";
+import { buildAiRuntime, missingProviderKeyMessage, isAiProviderConfigured } from "@/lib/ai/ai-preferences";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,11 @@ export async function POST(request) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  const aiRuntime = buildAiRuntime(user);
+  if (!isAiProviderConfigured(user)) {
+    return NextResponse.json({ error: missingProviderKeyMessage(aiRuntime.provider) }, { status: 503 });
+  }
+
   if (!canUsePreTradeAiAnalysis(user.subscriptionPlan)) {
     return NextResponse.json(
       { error: "Analiza AI pre-tranzacție este disponibilă pe planurile Pro și Elite." },
@@ -93,11 +99,12 @@ export async function POST(request) {
       timeframe,
       markPrice,
       botsOnPair,
+      aiRuntime,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (/GEMINI_API_KEY/i.test(msg)) {
-      return NextResponse.json({ error: "Serviciul AI nu este configurat (cheie Gemini lipsă)." }, { status: 503 });
+    if (/GEMINI_API_KEY|ANTHROPIC_API_KEY|Ollama:/i.test(msg)) {
+      return NextResponse.json({ error: missingProviderKeyMessage(aiRuntime.provider) }, { status: 503 });
     }
     if (e?.code === "MARKET_NOT_FOUND") {
       return NextResponse.json({ error: msg.slice(0, 500) }, { status: 404 });

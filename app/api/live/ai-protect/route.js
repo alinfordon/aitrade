@@ -8,6 +8,7 @@ import { canUseLiveAiAnalysis } from "@/lib/plans";
 import { rateLimit } from "@/lib/redis/rate-limit";
 import { getPrice } from "@/lib/binance/service";
 import { runLivePositionProtectAnalysis } from "@/lib/ai/live-position-analyze";
+import { buildAiRuntime, missingProviderKeyMessage, isAiProviderConfigured } from "@/lib/ai/ai-preferences";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,11 @@ export async function POST(request) {
     );
   }
 
+  const aiRuntime = buildAiRuntime(user);
+  if (!isAiProviderConfigured(user)) {
+    return NextResponse.json({ error: missingProviderKeyMessage(aiRuntime.provider) }, { status: 503 });
+  }
+
   const book =
     user.manualSpotBook && typeof user.manualSpotBook === "object" && !Array.isArray(user.manualSpotBook)
       ? user.manualSpotBook
@@ -89,11 +95,12 @@ export async function POST(request) {
       avgEntry,
       qty,
       markPrice,
+      aiRuntime,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (/GEMINI_API_KEY/i.test(msg)) {
-      return NextResponse.json({ error: "Serviciul AI nu este configurat (cheie Gemini lipsă)." }, { status: 503 });
+    if (/GEMINI_API_KEY|ANTHROPIC_API_KEY|Ollama:/i.test(msg)) {
+      return NextResponse.json({ error: missingProviderKeyMessage(aiRuntime.provider) }, { status: 503 });
     }
     return NextResponse.json({ error: msg.slice(0, 500) }, { status: 502 });
   }
