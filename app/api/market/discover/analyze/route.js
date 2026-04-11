@@ -28,7 +28,7 @@ export async function POST() {
   await connectDB();
   const user = await User.findById(session.userId)
     .select(
-      "aiSettings aiGeminiApiKeyEncrypted aiGeminiModel aiAnthropicApiKeyEncrypted aiAnthropicModel aiOllamaBaseUrl aiOllamaModel"
+      "aiSettings aiGeminiApiKeyEncrypted aiGeminiModel aiAnthropicApiKeyEncrypted aiAnthropicModel aiOllamaBaseUrl aiOllamaModel aiOllamaApiKeyEncrypted"
     )
     .lean();
   const aiRuntime = buildAiRuntime(user);

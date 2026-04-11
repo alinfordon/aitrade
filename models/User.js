@@ -48,6 +48,8 @@ const UserSchema = new mongoose.Schema(
     /** Ollama: URL API (ex. http://localhost:11434) — text clar; modelul tot în clar. */
     aiOllamaBaseUrl: { type: String, default: "" },
     aiOllamaModel: { type: String, default: "" },
+    /** Ollama Cloud / gateway cu Bearer — criptat AES-GCM; gol = OLLAMA_API_KEY din env dacă există. */
+    aiOllamaApiKeyEncrypted: { type: String, default: "" },
     /**
      * Pilot AI: analiză periodică, activare/pauză boti, închidere poziții la semnal.
      * botIds = subset din botii userului; maxUsdcPerTrade plafonează suma la ordin buy real.

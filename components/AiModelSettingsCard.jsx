@@ -22,16 +22,22 @@ export function AiModelSettingsCard() {
   const [anthropicModel, setAnthropicModel] = useState("");
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState("");
   const [ollamaModel, setOllamaModel] = useState("");
+  const [ollamaKeyInput, setOllamaKeyInput] = useState("");
   const [geminiKeyInput, setGeminiKeyInput] = useState("");
   const [anthropicKeyInput, setAnthropicKeyInput] = useState("");
   const geminiKeyTouched = useRef(false);
   const anthropicKeyTouched = useRef(false);
+  const ollamaKeyTouched = useRef(false);
   const [server, setServer] = useState({
     geminiConfigured: false,
     anthropicConfigured: false,
     ollamaEnvConfigured: false,
   });
-  const [keyStatus, setKeyStatus] = useState({ hasUserGeminiKey: false, hasUserAnthropicKey: false });
+  const [keyStatus, setKeyStatus] = useState({
+    hasUserGeminiKey: false,
+    hasUserAnthropicKey: false,
+    hasUserOllamaKey: false,
+  });
   const [selectedOk, setSelectedOk] = useState(true);
 
   const load = useCallback(async () => {
@@ -49,10 +55,12 @@ export function AiModelSettingsCard() {
       setAnthropicModel(String(s.anthropicModel || ""));
       setOllamaBaseUrl(String(s.ollamaBaseUrl || ""));
       setOllamaModel(String(s.ollamaModel || ""));
+      setOllamaKeyInput("");
       setGeminiKeyInput("");
       setAnthropicKeyInput("");
       geminiKeyTouched.current = false;
       anthropicKeyTouched.current = false;
+      ollamaKeyTouched.current = false;
       setServer(
         j.server || {
           geminiConfigured: false,
@@ -60,7 +68,9 @@ export function AiModelSettingsCard() {
           ollamaEnvConfigured: false,
         }
       );
-      setKeyStatus(j.keyStatus || { hasUserGeminiKey: false, hasUserAnthropicKey: false });
+      setKeyStatus(
+        j.keyStatus || { hasUserGeminiKey: false, hasUserAnthropicKey: false, hasUserOllamaKey: false }
+      );
       setSelectedOk(Boolean(j.selectedProviderConfigured));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Setări AI");
@@ -91,6 +101,9 @@ export function AiModelSettingsCard() {
       if (anthropicKeyTouched.current) {
         body.anthropicApiKey = anthropicKeyInput;
       }
+      if (ollamaKeyTouched.current) {
+        body.ollamaApiKey = ollamaKeyInput;
+      }
 
       const r = await fetch("/api/user/ai-settings", {
         method: "PATCH",
@@ -113,8 +126,10 @@ export function AiModelSettingsCard() {
       setSelectedOk(Boolean(j.selectedProviderConfigured));
       setGeminiKeyInput("");
       setAnthropicKeyInput("");
+      setOllamaKeyInput("");
       geminiKeyTouched.current = false;
       anthropicKeyTouched.current = false;
+      ollamaKeyTouched.current = false;
       toast.success("Setări AI salvate");
     } finally {
       setSaving(false);
@@ -128,9 +143,10 @@ export function AiModelSettingsCard() {
         <CardDescription>
           Gemini / Anthropic cu chei criptate (AES-256-GCM, același{" "}
           <code className="rounded bg-muted px-1 text-xs">ENCRYPTION_KEY</code> ca la Binance).{" "}
-          <strong className="font-medium text-foreground">Ollama</strong>: URL + model în clar; inferența rulează pe
-          mașina/rețeaua unde e API-ul Ollama (de ex. <code className="rounded bg-muted px-1 text-xs">localhost:11434</code>
-          ). Pe hosting public (ex. Vercel) trebuie URL Ollama accesibil din internet (VPN, tunnel, server dedicat).
+          <strong className="font-medium text-foreground">Ollama</strong>: URL + model în clar; cheia API (dacă e
+          necesară) e salvată criptat. Inferența rulează pe serverul aplicației către URL-ul setat. Pentru{" "}
+          <code className="rounded bg-muted px-1 text-xs">ollama.com/api</code> sau un proxy cu Bearer trebuie cheie.
+          Pe hosting public (ex. Vercel) URL-ul trebuie să fie accesibil din rețeaua serverului.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -146,12 +162,13 @@ export function AiModelSettingsCard() {
               </p>
               <p className="mt-1">
                 Chei în cont — Gemini: {keyStatus.hasUserGeminiKey ? "salvată" : "—"} · Anthropic:{" "}
-                {keyStatus.hasUserAnthropicKey ? "salvată" : "—"}
+                {keyStatus.hasUserAnthropicKey ? "salvată" : "—"} · Ollama:{" "}
+                {keyStatus.hasUserOllamaKey ? "salvată" : "—"}
               </p>
               {!selectedOk && (
                 <p className="mt-2 text-amber-600 dark:text-amber-400">
                   {provider === "ollama"
-                    ? "Ollama: URL de bază (http/https) și numele modelului trebuie să fie valide, iar serviciul Ollama trebuie să răspundă de pe serverul aplicației."
+                    ? "Ollama: URL (http/https) și model valide; serviciul trebuie să răspundă de pe serverul aplicației. Dacă primești 401, adaugă cheie Ollama (Setări) sau OLLAMA_API_KEY în env."
                     : "Furnizorul selectat nu are cheie disponibilă (nici în cont, nici în env) — analizele vor eșua."}
                 </p>
               )}
@@ -255,6 +272,27 @@ export function AiModelSettingsCard() {
                   placeholder="ex. llama3.2 — gol = OLLAMA_MODEL sau llama3.2"
                   className="font-mono text-xs"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>API key / Bearer (opțional)</Label>
+                <Input
+                  type="password"
+                  autoComplete="off"
+                  placeholder={
+                    keyStatus.hasUserOllamaKey ? "•••• lăsat gol = păstrezi cheia" : "pentru ollama.com sau proxy"
+                  }
+                  value={ollamaKeyInput}
+                  onChange={(e) => {
+                    ollamaKeyTouched.current = true;
+                    setOllamaKeyInput(e.target.value);
+                  }}
+                  className="font-mono text-xs"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Local <code className="rounded bg-muted px-1">127.0.0.1:11434</code> de obicei fără cheie. Gol +
+                  Salvează = ștergi cheia salvată. Alternativ: <code className="rounded bg-muted px-1">OLLAMA_API_KEY</code>{" "}
+                  pe server.
+                </p>
               </div>
               <p className="text-[11px] text-muted-foreground">
                 Asigură-te că modelul e tras: <code className="rounded bg-muted px-1">ollama pull &lt;nume&gt;</code>

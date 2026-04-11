@@ -41,7 +41,7 @@ export async function createPilotStrategyAndBot(args) {
 
   const userLean = await User.findById(userId)
     .select(
-      "aiSettings aiGeminiApiKeyEncrypted aiGeminiModel aiAnthropicApiKeyEncrypted aiAnthropicModel aiOllamaBaseUrl aiOllamaModel"
+      "aiSettings aiGeminiApiKeyEncrypted aiGeminiModel aiAnthropicApiKeyEncrypted aiAnthropicModel aiOllamaBaseUrl aiOllamaModel aiOllamaApiKeyEncrypted"
     )
     .lean();
   const aiRuntime = buildAiRuntime(userLean);

@@ -14,7 +14,9 @@ function serverFlags() {
     geminiConfigured: Boolean(process.env.GEMINI_API_KEY?.trim()),
     anthropicConfigured: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
     ollamaEnvConfigured: Boolean(
-      process.env.OLLAMA_BASE_URL?.trim() || process.env.OLLAMA_MODEL?.trim()
+      process.env.OLLAMA_BASE_URL?.trim() ||
+        process.env.OLLAMA_MODEL?.trim() ||
+        process.env.OLLAMA_API_KEY?.trim()
     ),
   };
 }
@@ -45,6 +47,7 @@ export async function GET() {
     keyStatus: {
       hasUserGeminiKey: Boolean(user.aiGeminiApiKeyEncrypted),
       hasUserAnthropicKey: Boolean(user.aiAnthropicApiKeyEncrypted),
+      hasUserOllamaKey: Boolean(user.aiOllamaApiKeyEncrypted),
     },
     server: serverFlags(),
     selectedProviderConfigured: isAiProviderConfigured(user),
@@ -119,6 +122,19 @@ export async function PATCH(request) {
     $set.aiOllamaModel = String(patch.ollamaModel || "").trim().slice(0, 128);
   }
 
+  if (patch.ollamaApiKey !== undefined) {
+    if (patch.ollamaApiKey.trim()) {
+      try {
+        $set.aiOllamaApiKeyEncrypted = encryptSecret(patch.ollamaApiKey.trim());
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Criptare eșuată";
+        return NextResponse.json({ error: msg }, { status: 500 });
+      }
+    } else {
+      $set.aiOllamaApiKeyEncrypted = "";
+    }
+  }
+
   if (!Object.keys($set).length) {
     return NextResponse.json({ error: "Nimic de actualizat" }, { status: 400 });
   }
@@ -142,6 +158,7 @@ export async function PATCH(request) {
     keyStatus: {
       hasUserGeminiKey: Boolean(user.aiGeminiApiKeyEncrypted),
       hasUserAnthropicKey: Boolean(user.aiAnthropicApiKeyEncrypted),
+      hasUserOllamaKey: Boolean(user.aiOllamaApiKeyEncrypted),
     },
     server: serverFlags(),
     selectedProviderConfigured: isAiProviderConfigured(user),
