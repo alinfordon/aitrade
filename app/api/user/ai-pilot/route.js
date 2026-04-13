@@ -31,6 +31,22 @@ function extractLastManualLiveEvents(logs, userId) {
   return [];
 }
 
+function extractLastManualLiveStats(logs, userId) {
+  const uid = String(userId);
+  for (const log of logs) {
+    const summary = log?.summary;
+    const items = Array.isArray(summary?.items) ? summary.items : [];
+    const mine = items.find((it) => String(it?.userId || "") === uid);
+    if (!mine) continue;
+    return {
+      slHits: Number(mine?.slHits) || 0,
+      tpHits: Number(mine?.tpHits) || 0,
+      positionsChecked: Number(mine?.positionsChecked) || 0,
+    };
+  }
+  return { slHits: 0, tpHits: 0, positionsChecked: 0 };
+}
+
 export async function GET() {
   const missing = respondIfMongoMissing();
   if (missing) return missing;
@@ -55,6 +71,7 @@ export async function GET() {
     .select("summary")
     .lean();
   const lastManualLiveEvents = extractLastManualLiveEvents(manualLiveLogs, session.userId);
+  const lastManualLiveStats = extractLastManualLiveStats(manualLiveLogs, session.userId);
 
   const botIdSet = new Set(bots.map((b) => String(b._id)));
   const storedRaw = (pilot.botIds || []).map((id) => String(id));
@@ -98,6 +115,7 @@ export async function GET() {
       lastManualLiveSummary: String(pilot.lastManualLiveSummary || ""),
       lastManualLiveError: String(pilot.lastManualLiveError || ""),
       lastManualLiveEvents,
+      lastManualLiveStats,
     },
     bots: bots.map((b) => ({
       id: String(b._id),

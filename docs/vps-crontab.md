@@ -23,6 +23,9 @@ Exemple (înlocuiește `3010`, domeniul nu contează — folosești doar loopbac
 # AI Pilot Live manual — TP/SL pe perechi pilot, în fiecare minut
 * * * * * curl -fsS --max-time 120 -H "Authorization: Bearer PUNE_AICI_CRON_SECRET" "http://127.0.0.1:3010/api/cron/ai-pilot-manual-live" >/dev/null 2>&1
 
+# AI Pilot Live AI — verificare AI și intervenții, la 5 minute
+*/5 * * * * curl -fsS --max-time 180 -H "Authorization: Bearer PUNE_AICI_CRON_SECRET" "http://127.0.0.1:3010/api/cron/ai-pilot-manual-live-ai" >/dev/null 2>&1
+
 # AI Pilot — la 15 minute (aliniat cu intervalul din UI)
 */15 * * * * curl -fsS --max-time 180 -H "Authorization: Bearer PUNE_AICI_CRON_SECRET" "http://127.0.0.1:3010/api/cron/ai-pilot" >/dev/null 2>&1
 
@@ -46,6 +49,7 @@ BASE_URL=http://127.0.0.1:3010
 
 * * * * * APP_ROOT=/var/www/aitrade BASE_URL=http://127.0.0.1:3010 /var/www/aitrade/scripts/vps-cron.sh run-bots >>/var/log/aitrade-cron.log 2>&1
 * * * * * APP_ROOT=/var/www/aitrade BASE_URL=http://127.0.0.1:3010 /var/www/aitrade/scripts/vps-cron.sh ai-pilot-manual-live >>/var/log/aitrade-cron.log 2>&1
+*/5 * * * * APP_ROOT=/var/www/aitrade BASE_URL=http://127.0.0.1:3010 /var/www/aitrade/scripts/vps-cron.sh ai-pilot-manual-live-ai >>/var/log/aitrade-cron.log 2>&1
 */15 * * * * APP_ROOT=/var/www/aitrade BASE_URL=http://127.0.0.1:3010 /var/www/aitrade/scripts/vps-cron.sh ai-pilot >>/var/log/aitrade-cron.log 2>&1
 0 2 * * * APP_ROOT=/var/www/aitrade BASE_URL=http://127.0.0.1:3010 /var/www/aitrade/scripts/vps-cron.sh ai-optimize >>/var/log/aitrade-cron.log 2>&1
 ```

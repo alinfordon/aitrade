@@ -126,5 +126,23 @@ function buildSummaryForStorage(job, body) {
     };
   }
 
+  if (job === "ai-pilot-manual-live-ai") {
+    const r = Array.isArray(body.results) ? body.results : [];
+    return {
+      batchUsers: r.length,
+      items: r.slice(0, 20).map((item) => ({
+        userId: item.userId,
+        ok: item.ok,
+        skipped: item.skipped,
+        reason: item.reason,
+        error: item.error ? String(item.error).slice(0, 300) : undefined,
+        rezumat: item.rezumat ? String(item.rezumat).slice(0, 400) : undefined,
+        sellsDone: item.sellsDone,
+        positionsChecked: item.positionsChecked,
+        nextInMs: item.nextInMs,
+      })),
+    };
+  }
+
   return { note: "unknown-job-shape" };
 }

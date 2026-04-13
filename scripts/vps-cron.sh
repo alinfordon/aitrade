@@ -10,6 +10,8 @@
 #   APP_ROOT=/var/www/aitrade BASE_URL=http://127.0.0.1:3010 * * * * * /var/www/aitrade/scripts/vps-cron.sh run-bots
 #   (exemplu: 5 câmpuri cron — minut oră zi lună dow; loghează cu >>/var/log/aitrade-cron.log 2>&1)
 #   APP_ROOT=... */15 * * * * .../vps-cron.sh ai-pilot
+#   APP_ROOT=... * * * * * .../vps-cron.sh ai-pilot-manual-live
+#   APP_ROOT=... */5 * * * * .../vps-cron.sh ai-pilot-manual-live-ai
 #   APP_ROOT=... 0 2 * * * .../vps-cron.sh ai-optimize
 #
 # CRON_SECRET: exportă în linia de crontab (recomandat) sau lasă scriptul să îl citească din .env.production:
@@ -61,12 +63,20 @@ case "$ACTION" in
     PATH_SUFFIX="/api/cron/ai-pilot"
     TIMEOUT="${TIMEOUT_AI_PILOT:-180}"
     ;;
+  ai-pilot-manual-live)
+    PATH_SUFFIX="/api/cron/ai-pilot-manual-live"
+    TIMEOUT="${TIMEOUT_AI_PILOT_MANUAL_LIVE:-120}"
+    ;;
+  ai-pilot-manual-live-ai)
+    PATH_SUFFIX="/api/cron/ai-pilot-manual-live-ai"
+    TIMEOUT="${TIMEOUT_AI_PILOT_MANUAL_LIVE_AI:-180}"
+    ;;
   ai-optimize)
     PATH_SUFFIX="/api/cron/ai-optimize"
     TIMEOUT="${TIMEOUT_AI_OPTIMIZE:-300}"
     ;;
   *)
-    echo "Utilizare: $0 run-bots | ai-pilot | ai-optimize" >&2
+    echo "Utilizare: $0 run-bots | ai-pilot | ai-pilot-manual-live | ai-pilot-manual-live-ai | ai-optimize" >&2
     exit 2
     ;;
 esac

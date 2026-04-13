@@ -14,6 +14,7 @@ export function AiPilotRunSummary({
   pilotLastManualLiveSummary,
   pilotLastManualLiveError,
   pilotLastManualLiveEvents = [],
+  pilotLastManualLiveStats = { slHits: 0, tpHits: 0, positionsChecked: 0 },
   className,
   variant = "default",
 }) {
@@ -57,6 +58,12 @@ export function AiPilotRunSummary({
           <span className={k}>Rezumat Live manual:</span> {pilotLastManualLiveSummary}
         </p>
       )}
+      <p>
+        <span className={k}>Statistici ultim cron Live manual:</span>{" "}
+        perechi verificate {Number(pilotLastManualLiveStats?.positionsChecked) || 0} · SL hit{" "}
+        {Number(pilotLastManualLiveStats?.slHits) || 0} · TP hit{" "}
+        {Number(pilotLastManualLiveStats?.tpHits) || 0}
+      </p>
       {pilotLastManualLiveError && (
         <p className="text-destructive">
           <span className="font-medium">Eroare Live manual:</span> {pilotLastManualLiveError}

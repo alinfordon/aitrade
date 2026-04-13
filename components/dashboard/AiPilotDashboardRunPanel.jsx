@@ -17,6 +17,11 @@ export function AiPilotDashboardRunPanel() {
   const [lastManualLiveSummary, setLastManualLiveSummary] = useState("");
   const [lastManualLiveError, setLastManualLiveError] = useState("");
   const [lastManualLiveEvents, setLastManualLiveEvents] = useState([]);
+  const [lastManualLiveStats, setLastManualLiveStats] = useState({
+    slHits: 0,
+    tpHits: 0,
+    positionsChecked: 0,
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -35,6 +40,15 @@ export function AiPilotDashboardRunPanel() {
       setLastManualLiveSummary(String(s.lastManualLiveSummary || ""));
       setLastManualLiveError(String(s.lastManualLiveError || ""));
       setLastManualLiveEvents(Array.isArray(s.lastManualLiveEvents) ? s.lastManualLiveEvents : []);
+      setLastManualLiveStats(
+        s.lastManualLiveStats && typeof s.lastManualLiveStats === "object"
+          ? {
+              slHits: Number(s.lastManualLiveStats.slHits) || 0,
+              tpHits: Number(s.lastManualLiveStats.tpHits) || 0,
+              positionsChecked: Number(s.lastManualLiveStats.positionsChecked) || 0,
+            }
+          : { slHits: 0, tpHits: 0, positionsChecked: 0 }
+      );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Pilot AI");
     } finally {
@@ -116,6 +130,7 @@ export function AiPilotDashboardRunPanel() {
               pilotLastManualLiveSummary={lastManualLiveSummary}
               pilotLastManualLiveError={lastManualLiveError}
               pilotLastManualLiveEvents={lastManualLiveEvents}
+              pilotLastManualLiveStats={lastManualLiveStats}
             />
           </div>
         ) : (

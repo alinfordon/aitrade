@@ -9,6 +9,7 @@ import { closeBotOpenPositionMarketOnly } from "@/server/trading/stop-bot";
 import { executeManualTrade } from "@/server/trading/execute-manual";
 import { createPilotStrategyAndBot } from "@/server/ai/pilot-create-bot";
 import { readPilotOpen } from "@/server/ai/pilot-read-open";
+import { runAutopilotManualLiveSellsDecide } from "@/lib/ai/autopilot-manual-live-decide";
 import { buildAiRuntime } from "@/lib/ai/ai-preferences";
 import { runLivePositionProtectAnalysis } from "@/lib/ai/live-position-analyze";
 import Trade from "@/models/Trade";
@@ -177,24 +178,8 @@ async function runManualLiveProtectionsTick({ userId, liveRows, bots }) {
       ? user.liveProtections
       : {};
   const applied = [];
-  const aiPilotPairs = new Set();
-  const rows = await Trade.aggregate([
-    {
-      $match: {
-        userId: user._id,
-        tradeSource: "manual",
-        side: "buy",
-        status: { $in: ["filled", "simulated"] },
-      },
-    },
-    { $sort: { createdAt: -1 } },
-    { $group: { _id: "$pair", meta: { $first: "$meta" } } },
-  ]);
-  for (const row of rows) {
-    if (row?.meta && typeof row.meta === "object" && row.meta.aiPilotControl) {
-      aiPilotPairs.add(normPair(row._id));
-    }
-  }
+  const aiPilotPairs = await readAiPilotPairSetByUser(user._id);
+  if (!aiPilotPairs.size) return { applied };
 
   for (const row of liveRows) {
     const pair = normPair(row.pereche);
@@ -269,6 +254,30 @@ async function runManualLiveProtectionsTick({ userId, liveRows, bots }) {
 
   return { applied };
 }
+
+async function readAiPilotPairSetByUser(userObjectId) {
+  const pairSet = new Set();
+  const rows = await Trade.aggregate([
+    {
+      $match: {
+        userId: userObjectId,
+        tradeSource: "manual",
+        side: "buy",
+        status: { $in: ["filled", "simulated"] },
+      },
+    },
+    { $sort: { createdAt: -1 } },
+    { $group: { _id: "$pair", meta: { $first: "$meta" } } },
+  ]);
+  for (const row of rows) {
+    if (row?.meta && typeof row.meta === "object" && row.meta.aiPilotControl) {
+      pairSet.add(normPair(row._id));
+    }
+  }
+  return pairSet;
+}
+
+const MAX_MANUAL_LIVE_AI_SELLS_PER_RUN = 5;
 
 /**
  * @param {string} userId
@@ -781,6 +790,150 @@ export async function runAiPilotManualLiveBatch(opts = {}) {
   for (const u of users) {
     try {
       const r = await runAiPilotManualLiveForUser(String(u._id));
+      results.push({ userId: String(u._id), ...r });
+    } catch (e) {
+      results.push({
+        userId: String(u._id),
+        ok: false,
+        error: String(e?.message || e),
+      });
+    }
+  }
+  return results;
+}
+
+/**
+ * Cron separat (recomandat la 5 minute): AI analizează pozițiile pilot live și poate propune vânzări.
+ * Nu înlocuiește cron-ul la minut pentru TP/SL, ci îl completează.
+ * @param {string} userId
+ */
+export async function runAiPilotManualLiveAiForUser(userId) {
+  await connectDB();
+  let user = await User.findById(userId);
+  if (!user?.aiPilot?.enabled) return { skipped: true, reason: "disabled" };
+  if (!user.aiPilot.manualLiveAiEnabled) return { skipped: true, reason: "manual_live_off" };
+  if (user.subscriptionPlan !== "pro" && user.subscriptionPlan !== "elite") {
+    return { skipped: true, reason: "plan" };
+  }
+  if (!user.aiPilot.manualTradingEnabled) return { skipped: true, reason: "manual_trading_off" };
+  if (user.aiPilot.pilotOrderMode !== "real") return { skipped: true, reason: "not_real_mode" };
+  if (!user?.apiKeyEncrypted || !user?.apiSecretEncrypted) return { skipped: true, reason: "no_api_keys" };
+
+  const liveRowsAll = liveManualPositionsFromUser(user);
+  if (!liveRowsAll.length) return { skipped: true, reason: "no_live_manual" };
+  const aiPilotPairs = await readAiPilotPairSetByUser(user._id);
+  const liveRows = liveRowsAll.filter((r) => aiPilotPairs.has(normPair(r.pereche)));
+  if (!liveRows.length) return { skipped: true, reason: "no_pilot_live_pairs" };
+
+  const cfg = user.aiPilot;
+  const allowedIds = Array.isArray(cfg.botIds) ? cfg.botIds.map((id) => String(id)) : [];
+  let bots = [];
+  if (allowedIds.length) {
+    bots = await Bot.find({ userId, _id: { $in: allowedIds } }).lean();
+  }
+
+  const pozitii = [];
+  for (const row of liveRows) {
+    let pretPiata = null;
+    let pctDeLaIntrare = null;
+    try {
+      pretPiata = await getPrice(row.pereche);
+      const avg = Number(row.pretMediu) || 0;
+      if (avg > 0 && pretPiata > 0) {
+        pctDeLaIntrare = ((pretPiata - avg) / avg) * 100;
+      }
+    } catch {
+      pretPiata = null;
+    }
+    pozitii.push({
+      pereche: row.pereche,
+      cantitateBaza: row.cantitateBaza,
+      pretMediu: row.pretMediu,
+      pretPiata,
+      pctDeLaIntrare,
+    });
+  }
+
+  const aiRuntime = buildAiRuntime(user);
+  let ai;
+  try {
+    ai = await runAutopilotManualLiveSellsDecide({ pozitii, aiRuntime });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+
+  const rezumat = String(ai.rezumat || "");
+  const rawVinde = Array.isArray(ai.vinde) ? ai.vinde : [];
+  const allowedPairs = new Set(liveRows.map((r) => normPair(r.pereche)));
+  const applied = [];
+  let sellsDone = 0;
+
+  for (const item of rawVinde) {
+    if (sellsDone >= MAX_MANUAL_LIVE_AI_SELLS_PER_RUN) break;
+    const pair = normPair(item?.pereche);
+    if (!pair || !allowedPairs.has(pair)) {
+      applied.push({ tip: "manual_vinde_live_ai", pair: pair || "?", ok: false, detail: "pereche_invalida" });
+      continue;
+    }
+    user = await User.findById(userId);
+    const b = getManualBook(user)[pair];
+    const qty = Number(b?.qty ?? 0);
+    const isPaper = Boolean(b?.paper);
+    if (isPaper || !Number.isFinite(qty) || qty <= 1e-12) {
+      applied.push({ tip: "manual_vinde_live_ai", pair, ok: false, detail: "fara_pozitie_live" });
+      continue;
+    }
+
+    const pilotBotIdForSell = findPilotBotIdOnPair(bots, pair);
+    const r = await executeManualTrade({
+      userId,
+      pair,
+      side: "sell",
+      mode: "real",
+      amountBase: qty,
+      fullExit: true,
+      associateBotForControl: true,
+      ...(pilotBotIdForSell ? { pilotBotId: pilotBotIdForSell } : {}),
+    });
+    sellsDone++;
+    applied.push({
+      tip: "manual_vinde_live_ai",
+      pair,
+      ok: r.ok,
+      detail: r.error || "ok",
+      motiv: String(item?.motiv || ""),
+    });
+  }
+
+  return {
+    ok: true,
+    rezumat,
+    applied,
+    sellsDone,
+    positionsChecked: liveRows.length,
+  };
+}
+
+/**
+ * @param {{ limit?: number }} opts
+ */
+export async function runAiPilotManualLiveAiBatch(opts = {}) {
+  const limit = Math.min(Math.max(opts.limit ?? 12, 1), 30);
+  await connectDB();
+  const users = await User.find({
+    "aiPilot.enabled": true,
+    "aiPilot.manualLiveAiEnabled": true,
+    "aiPilot.manualTradingEnabled": true,
+    "aiPilot.pilotOrderMode": "real",
+    subscriptionPlan: { $in: ["pro", "elite"] },
+  })
+    .limit(limit)
+    .select("_id")
+    .lean();
+  const results = [];
+  for (const u of users) {
+    try {
+      const r = await runAiPilotManualLiveAiForUser(String(u._id));
       results.push({ userId: String(u._id), ...r });
     } catch (e) {
       results.push({

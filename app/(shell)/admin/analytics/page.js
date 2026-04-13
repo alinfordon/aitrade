@@ -99,6 +99,7 @@ const CRON_JOB_LABEL = {
   "run-bots": "Run bots",
   "ai-pilot": "AI Pilot",
   "ai-pilot-manual-live": "AI Pilot · Live manual",
+  "ai-pilot-manual-live-ai": "AI Pilot · Live AI (5m)",
   "ai-optimize": "AI Optimize",
 };
 
@@ -118,6 +119,12 @@ function cronRunSummaryLine(job, summary) {
     const slHits = items.reduce((acc, it) => acc + (Number(it?.slHits) || 0), 0);
     const tpHits = items.reduce((acc, it) => acc + (Number(it?.tpHits) || 0), 0);
     return `${u} utilizatori · SL hit ${slHits} · TP hit ${tpHits}`;
+  }
+  if (job === "ai-pilot-manual-live-ai") {
+    const u = summary.batchUsers ?? (Array.isArray(summary.items) ? summary.items.length : 0);
+    const items = Array.isArray(summary.items) ? summary.items : [];
+    const sells = items.reduce((acc, it) => acc + (Number(it?.sellsDone) || 0), 0);
+    return `${u} utilizatori · intervenții AI ${sells}`;
   }
   if (job === "ai-optimize") {
     const t = summary.elitesTried ?? (Array.isArray(summary.items) ? summary.items.length : 0);
