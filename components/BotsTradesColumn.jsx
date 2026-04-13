@@ -15,8 +15,9 @@ import {
   useLivePositions,
 } from "@/lib/client/live-positions-store";
 
-const POLL_MS = 15_000;
 const SELLS_LIMIT = 150;
+const BOT_TRADES_CACHE_KEY = "aitrade:botsTradesColumn:v1";
+const BOT_TRADES_CACHE_TTL_MS = 60_000;
 
 function localDayBounds() {
   const start = new Date();
@@ -35,6 +36,42 @@ function liveHrefForBot(botId) {
   return `/live?bot=${encodeURIComponent(String(botId))}`;
 }
 
+function dayCacheKey(modeTab) {
+  const { start } = localDayBounds();
+  return `${start.toISOString().slice(0, 10)}:${modeTab}`;
+}
+
+function readBotTradesCache(modeTab) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(BOT_TRADES_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const entry = parsed?.[dayCacheKey(modeTab)];
+    if (!entry || typeof entry !== "object") return null;
+    if (Date.now() - Number(entry.updatedAt || 0) > BOT_TRADES_CACHE_TTL_MS) return null;
+    return {
+      dayLabel: typeof entry.dayLabel === "string" ? entry.dayLabel : "",
+      closedToday: Array.isArray(entry.closedToday) ? entry.closedToday : [],
+      daySummary: entry.daySummary ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeBotTradesCache(modeTab, payload) {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = localStorage.getItem(BOT_TRADES_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    parsed[dayCacheKey(modeTab)] = { ...payload, updatedAt: Date.now() };
+    localStorage.setItem(BOT_TRADES_CACHE_KEY, JSON.stringify(parsed));
+  } catch {
+    // ignore quota/private mode
+  }
+}
+
 /**
  * @param {{ className?: string; variant?: "default" | "dashboard" }} [props]
  */
@@ -50,17 +87,27 @@ export function BotsTradesColumn({ className, variant = "default" } = {}) {
   /** real = doar tranzacții live; paper = simulate / paper */
   const [modeTab, setModeTab] = useState("real");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ force = false } = {}) => {
     if (isDashboard) return;
     const { start, end } = localDayBounds();
-    setDayLabel(
-      start.toLocaleDateString("ro-RO", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      })
-    );
+    const computedDayLabel = start.toLocaleDateString("ro-RO", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    setDayLabel(computedDayLabel);
+
+    if (!force) {
+      const cached = readBotTradesCache(modeTab);
+      if (cached) {
+        setDayLabel(cached.dayLabel || computedDayLabel);
+        setClosedToday(cached.closedToday);
+        setDaySummary(cached.daySummary);
+        setLoading(false);
+        return;
+      }
+    }
 
     try {
       const paperParam = modeTab === "paper" ? "1" : "0";
@@ -83,11 +130,26 @@ export function BotsTradesColumn({ className, variant = "default" } = {}) {
         const js = await rStats.json();
         if (rStats.ok && js.summary) {
           setDaySummary(js.summary);
+          writeBotTradesCache(modeTab, {
+            dayLabel: computedDayLabel,
+            closedToday: sells,
+            daySummary: js.summary,
+          });
         } else {
           setDaySummary(null);
+          writeBotTradesCache(modeTab, {
+            dayLabel: computedDayLabel,
+            closedToday: sells,
+            daySummary: null,
+          });
         }
       } catch {
         setDaySummary(null);
+        writeBotTradesCache(modeTab, {
+          dayLabel: computedDayLabel,
+          closedToday: sells,
+          daySummary: null,
+        });
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Tranzacții boți");
@@ -121,9 +183,28 @@ export function BotsTradesColumn({ className, variant = "default" } = {}) {
   useEffect(() => {
     if (isDashboard) return;
     setLoading(true);
-    void load();
-    const id = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(id);
+    void load({ force: false });
+  }, [load, isDashboard]);
+
+  useEffect(() => {
+    if (isDashboard) return;
+    const onBotsChanged = () => {
+      setLoading(true);
+      void load({ force: true });
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void load({ force: false });
+      }
+    };
+    window.addEventListener("bots:data-changed", onBotsChanged);
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("bots:data-changed", onBotsChanged);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load, isDashboard]);
 
   return (
@@ -132,7 +213,7 @@ export function BotsTradesColumn({ className, variant = "default" } = {}) {
         "border-white/[0.08] bg-card/50 backdrop-blur-md",
         isDashboard
           ? "fleet-feed-card lg:static lg:max-h-none lg:overflow-visible"
-          : "lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:overflow-hidden",
+          : "lg:sticky lg:top-24 lg:h-[calc(100vh-8rem)] lg:max-h-[calc(100vh-8rem)] lg:flex lg:flex-col lg:overflow-hidden",
         className
       )}
     >
@@ -199,7 +280,7 @@ export function BotsTradesColumn({ className, variant = "default" } = {}) {
               className="text-xs"
               onClick={() => {
                 void refreshLivePositionsFromServer();
-                if (!isDashboard) void load();
+                if (!isDashboard) void load({ force: true });
               }}
             >
               Reîmprospătează
@@ -207,7 +288,7 @@ export function BotsTradesColumn({ className, variant = "default" } = {}) {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0 lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto">
+      <CardContent className="p-0 pb-[15px] lg:flex-1 lg:overflow-y-auto">
         {!isDashboard && wallet?.overview?.paper ? (
           <div className="border-b border-white/[0.08] bg-white/[0.02] p-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -330,7 +411,7 @@ export function BotsTradesColumn({ className, variant = "default" } = {}) {
         {loading ? (
           <p className="p-4 text-sm text-muted-foreground">Se încarcă…</p>
         ) : (
-          <div className={cn("p-4", !isDashboard && "space-y-6")}>
+          <div className={cn("p-4 pb-[15px]", !isDashboard && "space-y-6")}>
             <section className={cn(isDashboard && "fleet-live-positions")}>
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 {isDashboard ? "Deschise acum" : "Poziții active (boți)"}

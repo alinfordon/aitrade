@@ -11,6 +11,7 @@ export async function GET(request) {
   if (error) return error;
   const { searchParams } = new URL(request.url);
   const limit = Math.min(Number(searchParams.get("limit") || 50), 200);
+  const offset = Math.max(Number(searchParams.get("offset") || 0), 0);
   const botIdRaw = searchParams.get("botId");
   const pairRaw = searchParams.get("pair");
   const tradeSourceRaw = searchParams.get("tradeSource");
@@ -69,7 +70,9 @@ export async function GET(request) {
   }
   const trades = await Trade.find(filter)
     .sort({ createdAt: -1 })
+    .skip(offset)
     .limit(limit)
     .lean();
-  return NextResponse.json({ trades });
+  const total = await Trade.countDocuments(filter);
+  return NextResponse.json({ trades, total, limit, offset });
 }

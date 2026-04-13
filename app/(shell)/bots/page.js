@@ -21,6 +21,19 @@ import { BotsTradesColumn } from "@/components/BotsTradesColumn";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
 import { cn } from "@/lib/utils";
 import { Pencil, Trash2, Trash } from "lucide-react";
+import "@/app/(shell)/bots/bots-dashboard.css";
+
+const BOTS_PAGE_CACHE_KEY = "aitrade:botsPage:v1";
+const BOTS_PAGE_CACHE_TTL_MS = 60_000;
+const INDICATOR_OPTIONS = ["RSI", "EMA_CROSS", "MACD", "BOLLINGER", "SMA", "PRICE"];
+const OPERATOR_OPTIONS_BY_INDICATOR = {
+  RSI: ["<", ">", "<=", ">=", "between"],
+  EMA_CROSS: ["cross_up", "cross_down", "bullish_state", "bearish_state"],
+  MACD: ["cross_up", "cross_down", "hist_above", "hist_below"],
+  BOLLINGER: ["touch_lower", "touch_upper", "inside_band", "outside_band"],
+  SMA: ["<", ">", "<=", ">=", "cross_up", "cross_down"],
+  PRICE: ["<", ">", "<=", ">=", "cross_up", "cross_down"],
+};
 
 function botOpenPositionInfo(b) {
   if (b.mode === "paper" && b.paperState?.open) {
@@ -48,6 +61,53 @@ function strategySelectValue(bot) {
   return String(bot.strategyId);
 }
 
+function strategyDefinitionTextById(strategies, strategyId) {
+  if (!strategyId) return '{\n  "entry": [],\n  "exit": []\n}';
+  const row = strategies.find((s) => String(s._id) === String(strategyId));
+  if (!row?.definition || typeof row.definition !== "object") {
+    return '{\n  "entry": [],\n  "exit": []\n}';
+  }
+  try {
+    return JSON.stringify(row.definition, null, 2);
+  } catch {
+    return '{\n  "entry": [],\n  "exit": []\n}';
+  }
+}
+
+function normalizeRuleValue(indicator, value) {
+  if (value == null || value === "") return "";
+  if (indicator === "EMA_CROSS" || indicator === "MACD" || indicator === "BOLLINGER") {
+    return String(value);
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : value;
+}
+
+function parseDefinitionForEditor(rawText) {
+  try {
+    const parsed = JSON.parse(String(rawText || ""));
+    const entry = Array.isArray(parsed?.entry) ? parsed.entry : [];
+    const exit = Array.isArray(parsed?.exit) ? parsed.exit : [];
+    return { ok: true, entry, exit };
+  } catch {
+    return { ok: false, entry: [], exit: [] };
+  }
+}
+
+function operatorOptionsForIndicator(indicator) {
+  const key = String(indicator || "").toUpperCase();
+  return OPERATOR_OPTIONS_BY_INDICATOR[key] || ["<", ">", "cross_up", "cross_down"];
+}
+
+function indicatorFieldVisibility(indicator) {
+  const key = String(indicator || "").toUpperCase();
+  if (key === "EMA_CROSS") return { period: false, fast: true, slow: true };
+  if (key === "RSI" || key === "SMA" || key === "BOLLINGER") {
+    return { period: true, fast: false, slow: false };
+  }
+  return { period: false, fast: false, slow: false };
+}
+
 export default function BotsPage() {
   const { loadWallet } = useSpotWallet();
   const [bots, setBots] = useState([]);
@@ -67,18 +127,68 @@ export default function BotsPage() {
   const [stopLoading, setStopLoading] = useState(false);
   const [deleteAllInactiveLoading, setDeleteAllInactiveLoading] = useState(false);
 
-  const refresh = useCallback(async () => {
+  const readBotsPageCache = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem(BOTS_PAGE_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return null;
+      if (Date.now() - Number(parsed.updatedAt || 0) > BOTS_PAGE_CACHE_TTL_MS) return null;
+      return {
+        bots: Array.isArray(parsed.bots) ? parsed.bots : [],
+        strategies: Array.isArray(parsed.strategies) ? parsed.strategies : [],
+      };
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const writeBotsPageCache = useCallback((nextBots, nextStrategies) => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(
+        BOTS_PAGE_CACHE_KEY,
+        JSON.stringify({
+          updatedAt: Date.now(),
+          bots: Array.isArray(nextBots) ? nextBots : [],
+          strategies: Array.isArray(nextStrategies) ? nextStrategies : [],
+        })
+      );
+    } catch {
+      // ignore quota/private mode
+    }
+  }, []);
+
+  const notifyBotsDataChanged = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("bots:data-changed"));
+    }
+  }, []);
+
+  const refresh = useCallback(async ({ force = false } = {}) => {
+    if (!force) {
+      const cached = readBotsPageCache();
+      if (cached) {
+        setBots(cached.bots);
+        setStrategies(cached.strategies);
+        setStrategyId((cur) => cur || (cached.strategies?.[0] ? String(cached.strategies[0]._id) : ""));
+      }
+    }
     const [b, s] = await Promise.all([
       fetch("/api/bots").then((r) => r.json()),
       fetch("/api/strategies").then((r) => r.json()),
     ]);
-    setBots(b.bots || []);
-    setStrategies(s.strategies || []);
-    setStrategyId((cur) => cur || (s.strategies?.[0] ? String(s.strategies[0]._id) : ""));
-  }, []);
+    const nextBots = b.bots || [];
+    const nextStrategies = s.strategies || [];
+    setBots(nextBots);
+    setStrategies(nextStrategies);
+    setStrategyId((cur) => cur || (nextStrategies?.[0] ? String(nextStrategies[0]._id) : ""));
+    writeBotsPageCache(nextBots, nextStrategies);
+  }, [readBotsPageCache, writeBotsPageCache]);
 
   useEffect(() => {
-    refresh().catch(() => toast.error("Încărcare eșuată"));
+    refresh({ force: false }).catch(() => toast.error("Încărcare eșuată"));
   }, [refresh]);
 
   function openEdit(bot) {
@@ -87,6 +197,7 @@ export default function BotsPage() {
       return;
     }
     const sid = strategySelectValue(bot);
+    const definitionText = strategyDefinitionTextById(strategies, sid);
     setEditForm({
       id: String(bot._id),
       strategyId: sid,
@@ -98,6 +209,9 @@ export default function BotsPage() {
       maxDailyLossPct: Number(bot.risk?.maxDailyLossPct ?? 5),
       positionSizePct: Number(bot.risk?.positionSizePct ?? 10),
       initialStrategyId: sid,
+      strategyDefinitionText: definitionText,
+      initialStrategyDefinitionText: definitionText,
+      definitionEditorError: "",
     });
     setEditOpen(true);
   }
@@ -116,6 +230,36 @@ export default function BotsPage() {
           positionSizePct: Number(editForm.positionSizePct),
         },
       };
+      const strategyIdForSave = String(editForm.strategyId || "").trim();
+      const rawDefinition = String(editForm.strategyDefinitionText || "").trim();
+      if (strategyIdForSave && rawDefinition) {
+        let parsedDefinition;
+        try {
+          parsedDefinition = JSON.parse(rawDefinition);
+        } catch {
+          toast.error("Indicatori strategie: JSON invalid");
+          return;
+        }
+        if (
+          rawDefinition !== String(editForm.initialStrategyDefinitionText || "") ||
+          strategyIdForSave !== String(editForm.initialStrategyId || "")
+        ) {
+          const rStrategy = await fetch(`/api/strategies/${strategyIdForSave}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ definition: parsedDefinition }),
+          });
+          const jStrategy = await rStrategy.json().catch(() => ({}));
+          if (!rStrategy.ok) {
+            toast.error(
+              typeof jStrategy.error === "string"
+                ? jStrategy.error
+                : "Actualizare indicatori strategie eșuată"
+            );
+            return;
+          }
+        }
+      }
       if (editForm.strategyId !== editForm.initialStrategyId) {
         body.strategyId = editForm.strategyId;
       }
@@ -132,7 +276,8 @@ export default function BotsPage() {
       toast.success("Bot actualizat");
       setEditOpen(false);
       setEditForm(null);
-      await refresh();
+      await refresh({ force: true });
+      notifyBotsDataChanged();
     } catch {
       toast.error("Eroare rețea");
     } finally {
@@ -163,7 +308,8 @@ export default function BotsPage() {
       }
       const deleted = typeof j.deletedCount === "number" ? j.deletedCount : 0;
       toast.success(`Șterși ${deleted} bot(uri).`);
-      await refresh();
+      await refresh({ force: true });
+      notifyBotsDataChanged();
       void loadWallet({ silent: true });
     } catch {
       toast.error("Eroare rețea");
@@ -184,7 +330,8 @@ export default function BotsPage() {
       }
       toast.success("Bot șters");
       setDeleteTarget(null);
-      await refresh();
+      await refresh({ force: true });
+      notifyBotsDataChanged();
     } catch {
       toast.error("Eroare rețea");
     } finally {
@@ -205,7 +352,8 @@ export default function BotsPage() {
       return;
     }
     toast.success("Bot creat");
-    refresh();
+    await refresh({ force: true });
+    notifyBotsDataChanged();
   }
 
   async function startBot(id) {
@@ -217,7 +365,8 @@ export default function BotsPage() {
     }
     toast.success("Pornit");
     void loadWallet({ silent: true });
-    refresh();
+    await refresh({ force: true });
+    notifyBotsDataChanged();
   }
 
   async function stopBotRequest(id, disposition) {
@@ -251,9 +400,10 @@ export default function BotsPage() {
     if (!stopTarget) return;
     setStopLoading(true);
     try {
-      if (await stopBotRequest(stopTarget._id, disposition)) {
+        if (await stopBotRequest(stopTarget._id, disposition)) {
         setStopTarget(null);
-        await refresh();
+          await refresh({ force: true });
+        notifyBotsDataChanged();
       }
     } finally {
       setStopLoading(false);
@@ -263,15 +413,19 @@ export default function BotsPage() {
   const stopPosDetail = stopTarget ? botOpenPositionInfo(stopTarget) : null;
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title="Bots"
-        description="La Stop, dacă ai poziție deschisă, poți închide prin sell (paper simulat / real pe Binance) sau muta poziția în Live ca tranzacție manuală (doar spot). În dreapta: istoric tranzacții asociate boților."
-      />
+    <div className="bots-dashboard space-y-8">
+      <header className="bots-hero">
+        <div className="bots-hero-inner">
+          <PageHeader
+            title="Bots"
+            description="La Stop, dacă ai poziție deschisă, poți închide prin sell (paper simulat / real pe Binance) sau muta poziția în Live ca tranzacție manuală (doar spot). În dreapta: istoric tranzacții asociate boților."
+          />
+        </div>
+      </header>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,400px)] xl:gap-8 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="min-w-0 space-y-8">
-      <Card>
+      <Card className="bots-card-shell">
         <CardHeader>
           <CardTitle>Bot nou</CardTitle>
         </CardHeader>
@@ -343,7 +497,7 @@ export default function BotsPage() {
         {bots.map((b) => {
           const running = b.status === "active";
           return (
-          <Card key={b._id}>
+          <Card key={b._id} className="bots-card-shell">
             <CardContent className="flex flex-wrap items-center justify-between gap-4 py-4">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -403,7 +557,7 @@ export default function BotsPage() {
 
         </div>
         <aside className="min-w-0">
-          <BotsTradesColumn />
+          <BotsTradesColumn className="bots-card-shell" />
         </aside>
       </div>
 
@@ -430,7 +584,17 @@ export default function BotsPage() {
                 <select
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={editForm.strategyId}
-                  onChange={(e) => setEditForm((f) => (f ? { ...f, strategyId: e.target.value } : f))}
+                  onChange={(e) =>
+                    setEditForm((f) =>
+                      f
+                        ? {
+                            ...f,
+                            strategyId: e.target.value,
+                            strategyDefinitionText: strategyDefinitionTextById(strategies, e.target.value),
+                          }
+                        : f
+                    )
+                  }
                 >
                   {strategies.map((s) => (
                     <option key={s._id} value={String(s._id)}>
@@ -438,6 +602,189 @@ export default function BotsPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Indicatori strategie (JSON)</Label>
+                {(() => {
+                  const parsed = parseDefinitionForEditor(editForm.strategyDefinitionText);
+                  const updateRules = (side, nextRules) => {
+                    if (!parsed.ok) return;
+                    const next = {
+                      entry: side === "entry" ? nextRules : parsed.entry,
+                      exit: side === "exit" ? nextRules : parsed.exit,
+                    };
+                    setEditForm((f) =>
+                      f
+                        ? {
+                            ...f,
+                            strategyDefinitionText: JSON.stringify(next, null, 2),
+                            definitionEditorError: "",
+                          }
+                        : f
+                    );
+                  };
+                  const updateRuleField = (side, idx, field, val) => {
+                    const list = side === "entry" ? [...parsed.entry] : [...parsed.exit];
+                    const cur = { ...(list[idx] || {}) };
+                    if (field === "indicator") {
+                      const nextIndicator = String(val || "").toUpperCase();
+                      cur[field] = nextIndicator;
+                      const allowedOperators = operatorOptionsForIndicator(nextIndicator);
+                      if (!allowedOperators.includes(String(cur.operator || ""))) {
+                        cur.operator = allowedOperators[0];
+                      }
+                      cur.value = normalizeRuleValue(nextIndicator, cur.value);
+                      const visible = indicatorFieldVisibility(nextIndicator);
+                      if (!visible.period) delete cur.period;
+                      if (!visible.fast) delete cur.fast;
+                      if (!visible.slow) delete cur.slow;
+                      if (visible.period && cur.period == null) cur.period = 14;
+                      if (visible.fast && cur.fast == null) cur.fast = 9;
+                      if (visible.slow && cur.slow == null) cur.slow = 21;
+                    } else if (field === "value") {
+                      cur[field] = normalizeRuleValue(cur.indicator, val);
+                    } else if (["period", "fast", "slow"].includes(field)) {
+                      const n = Number(val);
+                      cur[field] = Number.isFinite(n) ? n : val;
+                    } else {
+                      cur[field] = val;
+                    }
+                    list[idx] = cur;
+                    updateRules(side, list);
+                  };
+                  const addRule = (side) => {
+                    const list = side === "entry" ? [...parsed.entry] : [...parsed.exit];
+                    list.push({ indicator: "RSI", operator: "<", value: 30, period: 14 });
+                    updateRules(side, list);
+                  };
+                  const removeRule = (side, idx) => {
+                    const list = side === "entry" ? [...parsed.entry] : [...parsed.exit];
+                    list.splice(idx, 1);
+                    updateRules(side, list);
+                  };
+
+                  if (!parsed.ok) {
+                    return (
+                      <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+                        JSON invalid: corectează definiția pentru a folosi editorul vizual.
+                      </p>
+                    );
+                  }
+
+                  const RuleSection = ({ title, side, rules }) => (
+                    <div className="space-y-2 rounded-md border border-border/70 bg-background/40 p-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          {title}
+                        </p>
+                        <Button type="button" size="sm" variant="outline" onClick={() => addRule(side)}>
+                          + regulă
+                        </Button>
+                      </div>
+                      {rules.length === 0 ? (
+                        <p className="text-[11px] text-muted-foreground">Nicio regulă.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {rules.map((rule, idx) => (
+                            <div key={`${side}-${idx}`} className="grid gap-2 rounded border border-border/60 p-2">
+                              {(() => {
+                                const visible = indicatorFieldVisibility(rule.indicator);
+                                return (
+                                  <>
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                <select
+                                  value={String(rule.indicator ?? "RSI").toUpperCase()}
+                                  onChange={(e) => updateRuleField(side, idx, "indicator", e.target.value)}
+                                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                                >
+                                  {INDICATOR_OPTIONS.map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={String(rule.operator ?? "")}
+                                  onChange={(e) => updateRuleField(side, idx, "operator", e.target.value)}
+                                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                                >
+                                  {operatorOptionsForIndicator(rule.indicator).map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="grid gap-2 sm:grid-cols-4">
+                                <Input
+                                  value={rule.value ?? ""}
+                                  onChange={(e) => updateRuleField(side, idx, "value", e.target.value)}
+                                  placeholder="value"
+                                  className="h-8 text-xs"
+                                />
+                                {visible.period ? (
+                                  <Input
+                                    value={rule.period ?? ""}
+                                    onChange={(e) => updateRuleField(side, idx, "period", e.target.value)}
+                                    placeholder="period"
+                                    className="h-8 text-xs"
+                                  />
+                                ) : null}
+                                {visible.fast ? (
+                                  <Input
+                                    value={rule.fast ?? ""}
+                                    onChange={(e) => updateRuleField(side, idx, "fast", e.target.value)}
+                                    placeholder="fast"
+                                    className="h-8 text-xs"
+                                  />
+                                ) : null}
+                                {visible.slow ? (
+                                  <Input
+                                    value={rule.slow ?? ""}
+                                    onChange={(e) => updateRuleField(side, idx, "slow", e.target.value)}
+                                    placeholder="slow"
+                                    className="h-8 text-xs"
+                                  />
+                                ) : null}
+                              </div>
+                              <div className="flex justify-end">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                                  onClick={() => removeRule(side, idx)}
+                                >
+                                  Șterge
+                                </Button>
+                              </div>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+
+                  return (
+                    <div className="space-y-2">
+                      <RuleSection title="Entry rules" side="entry" rules={parsed.entry} />
+                      <RuleSection title="Exit rules" side="exit" rules={parsed.exit} />
+                    </div>
+                  );
+                })()}
+                <textarea
+                  className="min-h-[180px] w-full rounded-md border border-input bg-background p-3 font-mono text-xs"
+                  value={editForm.strategyDefinitionText || ""}
+                  onChange={(e) =>
+                    setEditForm((f) => (f ? { ...f, strategyDefinitionText: e.target.value } : f))
+                  }
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Poți ajusta regulile de indicatori direct aici; se salvează împreună cu botul.
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Pereche</Label>

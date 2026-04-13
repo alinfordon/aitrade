@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { AiPilotRunSummary } from "@/components/AiPilotRunSummary";
+import { cn } from "@/lib/utils";
 
-export function AiPilotPanel() {
+export function AiPilotPanel({ className } = {}) {
   const [pilotCanUse, setPilotCanUse] = useState(false);
   const [pilotLoading, setPilotLoading] = useState(true);
   const [pilotSaving, setPilotSaving] = useState(false);
@@ -123,7 +124,7 @@ export function AiPilotPanel() {
   }
 
   return (
-    <Card id="ai-pilot">
+    <Card id="ai-pilot" className={cn(className)}>
       <CardHeader>
         <CardTitle>AI Pilot (cron)</CardTitle>
         <CardDescription>

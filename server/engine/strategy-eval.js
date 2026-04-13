@@ -58,11 +58,22 @@ export function evaluateRule(rule, series) {
     const bullNow = eF[i] > eS[i];
     const bullPrev = eF[prev] > eS[prev];
     const want = String(rule.value).toUpperCase();
-    if (want === "BULLISH") {
+    const mode = String(rule.mode || "").toLowerCase();
+
+    // Compatibilitate: dacă `mode` cere explicit cross, păstrăm comportamentul strict.
+    if (mode === "cross" || mode === "strict_cross" || want === "BULLISH_CROSS") {
       return bullNow && !bullPrev;
     }
-    if (want === "BEARISH") {
+    if (mode === "cross_down" || want === "BEARISH_CROSS") {
       return !bullNow && bullPrev;
+    }
+
+    // Mod implicit mai permisiv: trend state (nu doar bara exactă de cross).
+    if (want === "BULLISH" || mode === "state" || mode === "state_bullish") {
+      return bullNow;
+    }
+    if (want === "BEARISH" || mode === "state_bearish") {
+      return !bullNow;
     }
     return bullNow;
   }

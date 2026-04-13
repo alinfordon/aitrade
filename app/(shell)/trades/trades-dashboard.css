@@ -1,0 +1,59 @@
+.trades-dashboard {
+  --trades-line: rgba(255, 255, 255, 0.08);
+  --trades-glass: rgba(15, 23, 42, 0.56);
+  --trades-amber-glow: rgba(251, 191, 36, 0.2);
+}
+
+.trades-dashboard::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.2;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 85% 55% at 50% -5%, black 18%, transparent 72%);
+}
+
+.trades-dashboard > * {
+  position: relative;
+  z-index: 1;
+}
+
+.trades-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  border: 1px solid var(--trades-line);
+  background:
+    linear-gradient(145deg, rgba(251, 191, 36, 0.08) 0%, transparent 42%),
+    linear-gradient(180deg, var(--trades-glass) 0%, rgba(2, 6, 23, 0.35) 100%);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 24px 80px -24px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.trades-hero-inner {
+  padding: 1.2rem 1.25rem 1.35rem;
+}
+
+.trades-card-shell {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.62), rgba(2, 6, 23, 0.4));
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.28),
+    0 18px 48px -18px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+}
+
+.trades-card-shell:hover {
+  border-color: rgba(251, 191, 36, 0.2) !important;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.3),
+    0 22px 56px -16px rgba(0, 0, 0, 0.58),
+    0 0 40px -22px var(--trades-amber-glow);
+}

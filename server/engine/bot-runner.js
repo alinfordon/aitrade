@@ -370,6 +370,18 @@ export async function runSingleBot(botId) {
   // După vânzare (SL/TP sau semnal ieșire) nu ieșim din ciclu: dacă poziția e închisă și
   // strategia încă cere intrare, putem cumpăra în același tick (evită „gol” până la următorul cron).
 
+  // Flat fără semnal de intrare: cron rulează, dar strategia nu validează entry acum.
+  if (modePaper && !paper.open && !entryOk) {
+    bot.lastRun = new Date();
+    await bot.save();
+    return { skipped: true, reason: "no_entry_signal", entryOk, exitOk };
+  }
+  if (!modePaper && !pos.open && !entryOk) {
+    bot.lastRun = new Date();
+    await bot.save();
+    return { skipped: true, reason: "no_entry_signal", entryOk, exitOk };
+  }
+
   // Entry when flat
   if (modePaper && !paper.open && entryOk) {
     let alloc = paper.quoteBalance * posPct;
@@ -399,7 +411,7 @@ export async function runSingleBot(botId) {
       status: "simulated",
       isPaper: true,
     });
-    return { ok: true, action: "paper_buy" };
+    return { ok: true, action: "paper_buy", entryOk, exitOk };
   }
 
   if (!modePaper && !pos.open && entryOk) {
@@ -473,7 +485,7 @@ export async function runSingleBot(botId) {
         price: filledPrice,
         quoteQty: spend,
       });
-      return { ok: true, action: "live_buy" };
+      return { ok: true, action: "live_buy", entryOk, exitOk };
     } catch (e) {
       if (!isBinanceMarketClosedError(e)) {
         await Trade.create({
@@ -490,13 +502,13 @@ export async function runSingleBot(botId) {
       }
       bot.lastRun = new Date();
       await bot.save();
-      return { ok: false, error: String(e?.message || e) };
+      return { ok: false, error: String(e?.message || e), entryOk, exitOk };
     }
   }
 
   bot.lastRun = new Date();
   await bot.save();
-  return { ok: true, action: "hold" };
+  return { ok: true, action: "hold", entryOk, exitOk };
 }
 
 async function updateUserStats(userId, pnl, win) {

@@ -278,8 +278,10 @@ const MAX_MANUAL_LIVE_AI_SELLS_PER_RUN = 5;
 
 /**
  * @param {string} userId
+ * @param {{ force?: boolean }} [opts]
  */
-export async function runAiPilotForUser(userId) {
+export async function runAiPilotForUser(userId, opts = {}) {
+  const force = Boolean(opts?.force);
   await connectDB();
   let user = await User.findById(userId);
   if (!user?.aiPilot?.enabled) {
@@ -293,7 +295,7 @@ export async function runAiPilotForUser(userId) {
   const intervalMin = Number(cfg.intervalMinutes) || 15;
   const last = cfg.lastRunAt ? new Date(cfg.lastRunAt).getTime() : 0;
   const minMs = intervalMin * 60_000;
-  if (last && Date.now() - last < minMs) {
+  if (!force && last && Date.now() - last < minMs) {
     return { skipped: true, reason: "throttle", nextInMs: minMs - (Date.now() - last) };
   }
 

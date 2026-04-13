@@ -10,6 +10,8 @@ import { AiPilotRunSummary } from "@/components/AiPilotRunSummary";
 export function AiPilotDashboardRunPanel() {
   const [loading, setLoading] = useState(true);
   const [canUse, setCanUse] = useState(false);
+  const [pilotEnabled, setPilotEnabled] = useState(false);
+  const [runNowLoading, setRunNowLoading] = useState(false);
   const [lastRun, setLastRun] = useState(null);
   const [lastSummary, setLastSummary] = useState("");
   const [lastError, setLastError] = useState("");
@@ -46,6 +48,7 @@ export function AiPilotDashboardRunPanel() {
       }
       setCanUse(Boolean(j.canUse));
       const s = j.settings || {};
+      setPilotEnabled(Boolean(s.enabled));
       setLastSummary(String(s.lastSummary || ""));
       setLastError(String(s.lastError || ""));
       setLastRun(s.lastRunAt || null);
@@ -103,6 +106,27 @@ export function AiPilotDashboardRunPanel() {
     void load();
   }, [load]);
 
+  const runNow = useCallback(async () => {
+    if (!pilotEnabled) {
+      toast.info("Activează AI Pilot din setări înainte de rulare manuală.");
+      return;
+    }
+    setRunNowLoading(true);
+    try {
+      const r = await fetch("/api/user/ai-pilot/run", { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(typeof j.error === "string" ? j.error : "Rulare AI Pilot eșuată");
+      }
+      toast.success("Rundă AI Pilot pornită.");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Rulare AI Pilot eșuată");
+    } finally {
+      setRunNowLoading(false);
+    }
+  }, [load, pilotEnabled]);
+
   const hasSummary =
     lastRun ||
     lastSummary ||
@@ -129,13 +153,24 @@ export function AiPilotDashboardRunPanel() {
           <Button
             type="button"
             size="sm"
+            variant="secondary"
+            className="shrink-0 border border-amber-500/30 bg-amber-500/10 text-xs text-amber-100 hover:bg-amber-500/15"
+            disabled={loading || runNowLoading || !canUse || !pilotEnabled}
+            onClick={() => void runNow()}
+            title={!pilotEnabled ? "Activează AI Pilot din setări pentru rulare manuală." : undefined}
+          >
+            {runNowLoading ? "Rulează…" : "Pornește rundă"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
             variant="outline"
             className="shrink-0 border-white/15 bg-white/[0.04] text-xs"
-            disabled={loading}
+            disabled={loading || runNowLoading}
             onClick={() => void load()}
           >
             <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden />
-            Refresh
+            Reîncarcă
           </Button>
           <Button
             type="button"

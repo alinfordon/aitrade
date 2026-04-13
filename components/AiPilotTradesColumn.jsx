@@ -134,7 +134,7 @@ export function AiPilotTradesColumn({ className, variant = "default" } = {}) {
         "border-white/[0.08] bg-card/50 backdrop-blur-md",
         isDashboard
           ? "fleet-feed-card lg:static lg:max-h-none lg:overflow-visible"
-          : "lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:overflow-hidden",
+          : "lg:sticky lg:top-24 lg:h-[calc(100vh-8rem)] lg:max-h-[calc(100vh-8rem)] lg:flex lg:flex-col lg:overflow-hidden",
         className
       )}
     >
@@ -209,7 +209,7 @@ export function AiPilotTradesColumn({ className, variant = "default" } = {}) {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0 lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto">
+      <CardContent className="p-0 pb-[15px] lg:flex-1 lg:overflow-y-auto">
         {!isDashboard && !loading && daySummary != null && (
           <div className="border-b border-white/[0.08] bg-gradient-to-br from-primary/[0.06] via-transparent to-accent/[0.04] p-4">
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -256,7 +256,7 @@ export function AiPilotTradesColumn({ className, variant = "default" } = {}) {
         {loading ? (
           <p className="p-4 text-sm text-muted-foreground">Se încarcă…</p>
         ) : (
-          <div className={cn("p-4", !isDashboard && "space-y-6")}>
+          <div className={cn("p-4 pb-[15px]", !isDashboard && "space-y-6")}>
             <section className={cn(isDashboard && "fleet-live-positions")}>
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 {isDashboard ? "Deschise acum" : "Poziții active (pilot)"}
