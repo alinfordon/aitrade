@@ -21,6 +21,19 @@ export function AiPilotDashboardRunPanel() {
     slHits: 0,
     tpHits: 0,
     positionsChecked: 0,
+    liveManualCount: 0,
+    protectedCount: 0,
+  });
+  const [lastManualLiveAiStatus, setLastManualLiveAiStatus] = useState({
+    runAt: null,
+    ok: null,
+    statusCode: null,
+    summary: "",
+    error: "",
+    sellsDone: 0,
+    positionsChecked: 0,
+    skipped: false,
+    reason: "",
   });
 
   const load = useCallback(async () => {
@@ -46,8 +59,38 @@ export function AiPilotDashboardRunPanel() {
               slHits: Number(s.lastManualLiveStats.slHits) || 0,
               tpHits: Number(s.lastManualLiveStats.tpHits) || 0,
               positionsChecked: Number(s.lastManualLiveStats.positionsChecked) || 0,
+              liveManualCount: Number(s.lastManualLiveStats.liveManualCount) || 0,
+              protectedCount: Number(s.lastManualLiveStats.protectedCount) || 0,
             }
-          : { slHits: 0, tpHits: 0, positionsChecked: 0 }
+          : { slHits: 0, tpHits: 0, positionsChecked: 0, liveManualCount: 0, protectedCount: 0 }
+      );
+      setLastManualLiveAiStatus(
+        s.lastManualLiveAiStatus && typeof s.lastManualLiveAiStatus === "object"
+          ? {
+              runAt: s.lastManualLiveAiStatus.runAt || null,
+              ok:
+                typeof s.lastManualLiveAiStatus.ok === "boolean"
+                  ? s.lastManualLiveAiStatus.ok
+                  : null,
+              statusCode: Number(s.lastManualLiveAiStatus.statusCode) || null,
+              summary: String(s.lastManualLiveAiStatus.summary || ""),
+              error: String(s.lastManualLiveAiStatus.error || ""),
+              sellsDone: Number(s.lastManualLiveAiStatus.sellsDone) || 0,
+              positionsChecked: Number(s.lastManualLiveAiStatus.positionsChecked) || 0,
+              skipped: Boolean(s.lastManualLiveAiStatus.skipped),
+              reason: String(s.lastManualLiveAiStatus.reason || ""),
+            }
+          : {
+              runAt: null,
+              ok: null,
+              statusCode: null,
+              summary: "",
+              error: "",
+              sellsDone: 0,
+              positionsChecked: 0,
+              skipped: false,
+              reason: "",
+            }
       );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Pilot AI");
@@ -131,6 +174,7 @@ export function AiPilotDashboardRunPanel() {
               pilotLastManualLiveError={lastManualLiveError}
               pilotLastManualLiveEvents={lastManualLiveEvents}
               pilotLastManualLiveStats={lastManualLiveStats}
+              pilotLastManualLiveAiStatus={lastManualLiveAiStatus}
             />
           </div>
         ) : (

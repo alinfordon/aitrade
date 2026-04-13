@@ -42,9 +42,52 @@ function extractLastManualLiveStats(logs, userId) {
       slHits: Number(mine?.slHits) || 0,
       tpHits: Number(mine?.tpHits) || 0,
       positionsChecked: Number(mine?.positionsChecked) || 0,
+      liveManualCount: Number(mine?.liveManualCount) || 0,
+      protectedCount: Number(mine?.protectedCount) || 0,
     };
   }
-  return { slHits: 0, tpHits: 0, positionsChecked: 0 };
+  return { slHits: 0, tpHits: 0, positionsChecked: 0, liveManualCount: 0, protectedCount: 0 };
+}
+
+function extractLastManualLiveAiStatus(logs, userId) {
+  const uid = String(userId);
+  for (const log of logs) {
+    const summary = log?.summary;
+    const items = Array.isArray(summary?.items) ? summary.items : [];
+    const mine = items.find((it) => String(it?.userId || "") === uid);
+    if (!mine) continue;
+    return {
+      runAt: log?.createdAt ? new Date(log.createdAt).toISOString() : null,
+      ok: Boolean(log?.ok),
+      statusCode: Number(log?.statusCode) || null,
+      summary: mine?.rezumat ? String(mine.rezumat) : "",
+      error: mine?.error ? String(mine.error) : log?.error ? String(log.error) : "",
+      sellsDone: Number(mine?.sellsDone) || 0,
+      positionsChecked: Number(mine?.positionsChecked) || 0,
+      skipped: Boolean(mine?.skipped),
+      reason: mine?.reason ? String(mine.reason) : "",
+      aiDecisions: Array.isArray(mine?.aiDecisions)
+        ? mine.aiDecisions.slice(0, 8).map((d) => ({
+            pair: d?.pair ? String(d.pair) : "",
+            ok: Boolean(d?.ok),
+            motiv: d?.motiv ? String(d.motiv) : "",
+            detail: d?.detail ? String(d.detail) : "",
+          }))
+        : [],
+    };
+  }
+  return {
+    runAt: null,
+    ok: null,
+    statusCode: null,
+    summary: "",
+    error: "",
+    sellsDone: 0,
+    positionsChecked: 0,
+    skipped: false,
+    reason: "",
+    aiDecisions: [],
+  };
 }
 
 export async function GET() {
@@ -70,8 +113,14 @@ export async function GET() {
     .limit(6)
     .select("summary")
     .lean();
+  const manualLiveAiLogs = await CronRunLog.find({ job: "ai-pilot-manual-live-ai" })
+    .sort({ createdAt: -1 })
+    .limit(6)
+    .select("summary ok error statusCode createdAt")
+    .lean();
   const lastManualLiveEvents = extractLastManualLiveEvents(manualLiveLogs, session.userId);
   const lastManualLiveStats = extractLastManualLiveStats(manualLiveLogs, session.userId);
+  const lastManualLiveAiStatus = extractLastManualLiveAiStatus(manualLiveAiLogs, session.userId);
 
   const botIdSet = new Set(bots.map((b) => String(b._id)));
   const storedRaw = (pilot.botIds || []).map((id) => String(id));
@@ -116,6 +165,7 @@ export async function GET() {
       lastManualLiveError: String(pilot.lastManualLiveError || ""),
       lastManualLiveEvents,
       lastManualLiveStats,
+      lastManualLiveAiStatus,
     },
     bots: bots.map((b) => ({
       id: String(b._id),

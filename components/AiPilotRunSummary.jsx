@@ -14,7 +14,25 @@ export function AiPilotRunSummary({
   pilotLastManualLiveSummary,
   pilotLastManualLiveError,
   pilotLastManualLiveEvents = [],
-  pilotLastManualLiveStats = { slHits: 0, tpHits: 0, positionsChecked: 0 },
+  pilotLastManualLiveStats = {
+    slHits: 0,
+    tpHits: 0,
+    positionsChecked: 0,
+    liveManualCount: 0,
+    protectedCount: 0,
+  },
+  pilotLastManualLiveAiStatus = {
+    runAt: null,
+    ok: null,
+    statusCode: null,
+    summary: "",
+    error: "",
+    sellsDone: 0,
+    positionsChecked: 0,
+    skipped: false,
+    reason: "",
+    aiDecisions: [],
+  },
   className,
   variant = "default",
 }) {
@@ -64,6 +82,11 @@ export function AiPilotRunSummary({
         {Number(pilotLastManualLiveStats?.slHits) || 0} · TP hit{" "}
         {Number(pilotLastManualLiveStats?.tpHits) || 0}
       </p>
+      <p>
+        <span className={k}>Acoperire TP/SL:</span> manual live{" "}
+        {Number(pilotLastManualLiveStats?.liveManualCount) || 0} · cu SL/TP{" "}
+        {Number(pilotLastManualLiveStats?.protectedCount) || 0}
+      </p>
       {pilotLastManualLiveError && (
         <p className="text-destructive">
           <span className="font-medium">Eroare Live manual:</span> {pilotLastManualLiveError}
@@ -85,6 +108,55 @@ export function AiPilotRunSummary({
               </span>
             ))}
           </div>
+        </div>
+      )}
+      {(pilotLastManualLiveAiStatus?.runAt ||
+        pilotLastManualLiveAiStatus?.summary ||
+        pilotLastManualLiveAiStatus?.error) && (
+        <div className="space-y-1.5 rounded border border-white/10 bg-white/[0.02] px-2 py-1.5">
+          <p>
+            <span className={k}>Ultima verificare Live AI (5m):</span>{" "}
+            {pilotLastManualLiveAiStatus?.runAt
+              ? new Date(pilotLastManualLiveAiStatus.runAt).toLocaleString("ro-RO")
+              : "—"}
+          </p>
+          <p>
+            <span className={k}>Statistici Live AI:</span> perechi verificate{" "}
+            {Number(pilotLastManualLiveAiStatus?.positionsChecked) || 0} · intervenții{" "}
+            {Number(pilotLastManualLiveAiStatus?.sellsDone) || 0}
+            {pilotLastManualLiveAiStatus?.skipped && pilotLastManualLiveAiStatus?.reason
+              ? ` · skip: ${pilotLastManualLiveAiStatus.reason}`
+              : ""}
+          </p>
+          {pilotLastManualLiveAiStatus?.summary ? (
+            <p>
+              <span className={k}>Rezumat Live AI:</span> {pilotLastManualLiveAiStatus.summary}
+            </p>
+          ) : null}
+          {pilotLastManualLiveAiStatus?.error ? (
+            <p className="text-destructive">
+              <span className="font-medium">Eroare Live AI:</span>{" "}
+              {pilotLastManualLiveAiStatus.error}
+            </p>
+          ) : null}
+          {Array.isArray(pilotLastManualLiveAiStatus?.aiDecisions) &&
+          pilotLastManualLiveAiStatus.aiDecisions.length > 0 ? (
+            <div className="space-y-1">
+              <p>
+                <span className={k}>Explicații AI (5m):</span>
+              </p>
+              <div className="space-y-1">
+                {pilotLastManualLiveAiStatus.aiDecisions.map((d, idx) => (
+                  <p key={`${d.pair || "?"}-${idx}`} className="text-[11px] leading-snug text-muted-foreground">
+                    <span className="font-mono text-foreground">{d.pair || "?"}</span>
+                    {" · "}
+                    {d.ok ? "intervenție" : "fără execuție"}
+                    {d.motiv ? ` · ${d.motiv}` : d.detail ? ` · ${d.detail}` : ""}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

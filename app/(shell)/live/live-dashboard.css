@@ -1,0 +1,54 @@
+.live-dashboard {
+  --live-line: rgba(255, 255, 255, 0.08);
+  --live-glass: rgba(15, 23, 42, 0.58);
+  --live-amber-glow: rgba(251, 191, 36, 0.22);
+}
+
+.live-dashboard::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.22;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 85% 55% at 50% -5%, black 18%, transparent 72%);
+}
+
+.live-dashboard > * {
+  position: relative;
+  z-index: 1;
+}
+
+.live-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  border: 1px solid var(--live-line);
+  background:
+    linear-gradient(145deg, rgba(251, 191, 36, 0.08) 0%, transparent 42%),
+    linear-gradient(180deg, var(--live-glass) 0%, rgba(2, 6, 23, 0.35) 100%);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 24px 80px -24px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.live-hero-inner {
+  padding: 1.2rem 1.25rem 1.3rem;
+}
+
+.live-panel-shell {
+  border-radius: 1rem;
+}
+
+.live-panel-shell [class*="lg:sticky"] {
+  top: 1rem;
+}
+
+.live-panel-shell [class*="rounded-lg border"]:hover {
+  box-shadow: 0 0 28px -18px var(--live-amber-glow);
+}

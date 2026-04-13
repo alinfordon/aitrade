@@ -178,12 +178,9 @@ async function runManualLiveProtectionsTick({ userId, liveRows, bots }) {
       ? user.liveProtections
       : {};
   const applied = [];
-  const aiPilotPairs = await readAiPilotPairSetByUser(user._id);
-  if (!aiPilotPairs.size) return { applied };
 
   for (const row of liveRows) {
     const pair = normPair(row.pereche);
-    if (!aiPilotPairs.has(pair)) continue;
     const p = prot[pair];
     if (!p || typeof p !== "object") continue;
     const stopLoss =
@@ -541,7 +538,8 @@ export async function runAiPilotForUser(userId) {
         goal,
         riskStyle: risk,
         strategyName: bn.numeStrategie,
-        activate: Boolean(bn.pornesteActiv),
+        // Implicit pornim botul dacă AI nu a specificat explicit false.
+        activate: bn.pornesteActiv !== false,
         mode: orderMode,
         maxPilotBots,
         gainerPairSet,
@@ -729,9 +727,35 @@ export async function runAiPilotManualLiveForUser(userId) {
   }
 
   user = await User.findById(userId);
-  let liveRows = liveManualPositionsFromUser(user);
+  const liveRows = liveManualPositionsFromUser(user);
+  const prot =
+    user.liveProtections && typeof user.liveProtections === "object" && !Array.isArray(user.liveProtections)
+      ? user.liveProtections
+      : {};
+  const protectedLiveRows = liveRows.filter((r) => {
+    const p = prot[normPair(r.pereche)];
+    if (!p || typeof p !== "object") return false;
+    const hasSl = p.stopLoss != null && Number.isFinite(Number(p.stopLoss));
+    const hasTp = p.takeProfit != null && Number.isFinite(Number(p.takeProfit));
+    return hasSl || hasTp;
+  });
   if (!liveRows.length) {
-    return { skipped: true, reason: "no_live_manual" };
+    return {
+      skipped: true,
+      reason: "no_live_manual",
+      liveManualCount: 0,
+      protectedCount: 0,
+      positionsChecked: 0,
+    };
+  }
+  if (!protectedLiveRows.length) {
+    return {
+      skipped: true,
+      reason: "no_live_protections",
+      liveManualCount: liveRows.length,
+      protectedCount: 0,
+      positionsChecked: 0,
+    };
   }
 
   const allowedIds = Array.isArray(cfg.botIds) ? cfg.botIds.map((id) => String(id)) : [];
@@ -752,8 +776,8 @@ export async function runAiPilotManualLiveForUser(userId) {
   const sellsDone = protections.applied.filter((x) => x.ok).length;
   const rezumat =
     sellsDone > 0
-      ? "Cron la minut: TP/SL executat pe perechi AI Pilot cu strategie salvată."
-      : "Cron la minut: monitorizare TP/SL pe perechi AI Pilot (fără semnal AI nou).";
+      ? "Cron la minut: TP/SL executat pe poziții live cu protecții salvate."
+      : "Cron la minut: monitorizare TP/SL pe poziții live cu protecții salvate.";
 
   user = await User.findById(userId);
   user.aiPilot.lastManualLiveRunAt = new Date();
@@ -766,7 +790,9 @@ export async function runAiPilotManualLiveForUser(userId) {
     rezumat,
     applied: protections.applied || [],
     sellsDone,
-    positionsChecked: liveRows.length,
+    positionsChecked: protectedLiveRows.length,
+    liveManualCount: liveRows.length,
+    protectedCount: protectedLiveRows.length,
   };
 }
 

@@ -101,6 +101,14 @@ function fmtDecimal4(n) {
   return Number(n).toFixed(4);
 }
 
+function hasSavedProtection(row) {
+  if (!row || typeof row !== "object") return false;
+  const sl = row.stopLoss != null && Number.isFinite(Number(row.stopLoss)) && Number(row.stopLoss) > 0;
+  const tp =
+    row.takeProfit != null && Number.isFinite(Number(row.takeProfit)) && Number(row.takeProfit) > 0;
+  return sl || tp;
+}
+
 /** SL/TP pe grafic: reflectă câmpurile în timp real; invalid → încă valoarea salvată. */
 function botHasOpenBookPosition(b) {
   if (!b) return false;
@@ -983,6 +991,15 @@ export function LiveTradingPanel() {
                                 live
                               </Badge>
                             )}
+                            {hasSavedProtection(row) ? (
+                              <Badge variant="outline" className="border-emerald-500/40 text-[9px] text-emerald-200">
+                                TP/SL monitorizat
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[9px] text-muted-foreground">
+                                fără TP/SL
+                              </Badge>
+                            )}
                           </div>
                         </div>
                         <div className="font-mono text-xs text-muted-foreground">
@@ -1025,6 +1042,15 @@ export function LiveTradingPanel() {
                             ) : (
                               <Badge variant="secondary" className="text-[9px]">
                                 live
+                              </Badge>
+                            )}
+                            {hasSavedProtection(row) ? (
+                              <Badge variant="outline" className="border-emerald-500/40 text-[9px] text-emerald-200">
+                                TP/SL monitorizat
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[9px] text-muted-foreground">
+                                fără TP/SL
                               </Badge>
                             )}
                           </div>

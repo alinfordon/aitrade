@@ -121,6 +121,8 @@ function buildSummaryForStorage(job, body) {
         rezumat: item.rezumat ? String(item.rezumat).slice(0, 400) : undefined,
         sellsDone: item.sellsDone,
         positionsChecked: item.positionsChecked,
+        liveManualCount: item.liveManualCount,
+        protectedCount: item.protectedCount,
         nextInMs: item.nextInMs,
       })),
     };
@@ -130,17 +132,30 @@ function buildSummaryForStorage(job, body) {
     const r = Array.isArray(body.results) ? body.results : [];
     return {
       batchUsers: r.length,
-      items: r.slice(0, 20).map((item) => ({
-        userId: item.userId,
-        ok: item.ok,
-        skipped: item.skipped,
-        reason: item.reason,
-        error: item.error ? String(item.error).slice(0, 300) : undefined,
-        rezumat: item.rezumat ? String(item.rezumat).slice(0, 400) : undefined,
-        sellsDone: item.sellsDone,
-        positionsChecked: item.positionsChecked,
-        nextInMs: item.nextInMs,
-      })),
+      items: r.slice(0, 20).map((item) => {
+        const applied = Array.isArray(item.applied) ? item.applied : [];
+        const aiDecisions = applied
+          .filter((a) => a && a.tip === "manual_vinde_live_ai")
+          .slice(0, 8)
+          .map((a) => ({
+            pair: a.pair,
+            ok: a.ok,
+            motiv: a.motiv ? String(a.motiv).slice(0, 240) : "",
+            detail: a.detail ? String(a.detail).slice(0, 120) : "",
+          }));
+        return {
+          userId: item.userId,
+          ok: item.ok,
+          skipped: item.skipped,
+          reason: item.reason,
+          error: item.error ? String(item.error).slice(0, 300) : undefined,
+          rezumat: item.rezumat ? String(item.rezumat).slice(0, 400) : undefined,
+          sellsDone: item.sellsDone,
+          positionsChecked: item.positionsChecked,
+          nextInMs: item.nextInMs,
+          aiDecisions,
+        };
+      }),
     };
   }
 

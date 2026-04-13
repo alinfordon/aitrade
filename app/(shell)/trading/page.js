@@ -16,6 +16,7 @@ import { PageHeader } from "@/components/shell/PageHeader";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { canUsePreTradeAiAnalysis } from "@/lib/plans";
+import "@/app/(shell)/trading/trading-dashboard.css";
 
 const TF_OPTIONS = ["15m", "1h", "4h", "1d"];
 
@@ -87,7 +88,6 @@ function TradingPageInner() {
   const [timeframe, setTimeframe] = useState("1h");
   const [summary, setSummary] = useState(null);
   const [filterSource, setFilterSource] = useState("all");
-  const [filterPaper, setFilterPaper] = useState("all");
   const { wallet, loadWallet } = useSpotWallet();
   const binanceErrSeen = useRef(null);
   useEffect(() => {
@@ -132,11 +132,11 @@ function TradingPageInner() {
   }, [symbol, timeframe, side]);
 
   const loadStats = useCallback(async () => {
-    const q = new URLSearchParams({ source: filterSource, paper: filterPaper });
+    const q = new URLSearchParams({ source: filterSource, paper: "real" });
     const r = await fetch(`/api/analytics/performance?${q}`);
     const j = await r.json();
     if (j.summary) setSummary(j.summary);
-  }, [filterSource, filterPaper]);
+  }, [filterSource]);
 
   useEffect(() => {
     loadStats().catch(() => {});
@@ -253,13 +253,17 @@ function TradingPageInner() {
     : [];
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title="Tranzacții manuale & grafic"
-        description="Vezi soldul Spot (real sau paper), alege perechea și plasează ordine market. Plan Pro/Elite: analiză AI înainte de ordin, cu indicatori pe grafic și verdict (intră acum / așteaptă) plus sugestie bot."
-      />
+    <div className="trading-dashboard space-y-8">
+      <header className="trading-hero">
+        <div className="trading-hero-inner space-y-4">
+          <PageHeader
+            title="Tranzacții manuale & grafic"
+            description="Vezi soldul Spot (real sau paper), alege perechea și plasează ordine market. Plan Pro/Elite: analiză AI înainte de ordin, cu indicatori pe grafic și verdict (intră acum / așteaptă) plus sugestie bot."
+          />
+        </div>
+      </header>
 
-      <Card>
+      <Card className="trading-card-shell">
         <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>Soldă Spot</CardTitle>
@@ -280,7 +284,7 @@ function TradingPageInner() {
             {wallet?.real?.error && (
               <p className="mb-2 text-sm text-destructive">{wallet.real.error}</p>
             )}
-            <RealSpotBalancesTable wallet={wallet} />
+            <RealSpotBalancesTable wallet={wallet} minUsdTotal={1} />
           </div>
 
           <div>
@@ -330,7 +334,7 @@ function TradingPageInner() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="trading-card-shell">
         <CardHeader>
           <CardTitle>Analiză AI înainte de ordin</CardTitle>
           <CardDescription>
@@ -424,7 +428,7 @@ function TradingPageInner() {
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card className="trading-card-shell lg:col-span-2">
           <CardHeader className="flex flex-row flex-wrap items-end justify-between gap-4">
             <div>
               <CardTitle>Grafic candlestick</CardTitle>
@@ -492,7 +496,7 @@ function TradingPageInner() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="trading-card-shell">
           <CardHeader>
             <CardTitle>Ordin manual</CardTitle>
             <CardDescription>
@@ -566,7 +570,7 @@ function TradingPageInner() {
         </Card>
       </div>
 
-      <Card>
+      <Card className="trading-card-shell">
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>Raport performanță</CardTitle>
@@ -582,15 +586,6 @@ function TradingPageInner() {
               <option value="manual">Doar manual</option>
               <option value="bot">Doar bot</option>
               <option value="copy">Doar copy</option>
-            </select>
-            <select
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-              value={filterPaper}
-              onChange={(e) => setFilterPaper(e.target.value)}
-            >
-              <option value="all">Paper + real</option>
-              <option value="paper">Paper</option>
-              <option value="real">Real</option>
             </select>
             <Button type="button" size="sm" variant="secondary" onClick={() => loadStats()}>
               Reîncarcă
