@@ -74,7 +74,7 @@ const UserSchema = new mongoose.Schema(
       lastError: { type: String, default: "" },
       /** Cron separat: verifică poziții manuale Live și poate propune vânzări (mod real). */
       manualLiveAiEnabled: { type: Boolean, default: false },
-      manualLiveIntervalMinutes: { type: Number, default: 5 },
+      manualLiveIntervalMinutes: { type: Number, default: 1 },
       lastManualLiveRunAt: { type: Date, default: null },
       lastManualLiveSummary: { type: String, default: "" },
       lastManualLiveError: { type: String, default: "" },

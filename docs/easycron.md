@@ -1,6 +1,11 @@
-# EasyCron — `/api/cron/run-bots` la fiecare minut
+# EasyCron / VPS cron — endpoint-uri `/api/cron/*`
 
-Planificarea boturilor active se face **doar** prin EasyCron (interval 1 min). Vercel Hobby nu permite cron des pe `run-bots`; în `vercel.json` a rămas doar `ai-optimize` (zilnic).
+Planificarea joburilor de trading se poate face prin **EasyCron** sau direct prin **cron pe VPS**.
+Recomandat:
+
+- `run-bots` la fiecare minut
+- `ai-pilot-manual-live` la fiecare minut (monitorizare TP/SL salvat pe perechi AI Pilot, fără decizie AI nouă)
+- `ai-pilot` la 15 minute
 
 ## Pregătire
 
@@ -11,7 +16,10 @@ Planificarea boturilor active se face **doar** prin EasyCron (interval 1 min). V
 
 1. Cont → **Create Cron Job**.
 2. **URL**  
-   `https://NUME.vercel.app/api/cron/run-bots`
+   unul dintre:
+   - `https://NUME.vercel.app/api/cron/run-bots`
+   - `https://NUME.vercel.app/api/cron/ai-pilot-manual-live`
+   - `https://NUME.vercel.app/api/cron/ai-pilot`
 3. **HTTP method**  
    `GET`
 4. **Anteturi (Avansat → Headers)** — reține: **`CRON_SECRET` e numele variabilei din Vercel, nu numele antetului.**  
@@ -22,6 +30,22 @@ Planificarea boturilor active se face **doar** prin EasyCron (interval 1 min). V
 6. **Schedule** / **When to execute**  
    Expresie **cron**: `* * * * *` (în fiecare minut) — sau echivalentul „Every minute” din wizard.
 7. Salvează și rulează o dată **manual** (Test / Run now), dacă serviciul oferă.
+
+## Configurare VPS `crontab` (alternativ la EasyCron)
+
+Exemple (înlocuiești domeniul și secretul):
+
+```cron
+* * * * * curl -fsS -m 25 -H "Authorization: Bearer CRON_SECRETUL_TAU" "https://DOMENIUL-TAU.ro/api/cron/run-bots" >/dev/null 2>&1
+* * * * * curl -fsS -m 25 -H "Authorization: Bearer CRON_SECRETUL_TAU" "https://DOMENIUL-TAU.ro/api/cron/ai-pilot-manual-live" >/dev/null 2>&1
+*/15 * * * * curl -fsS -m 25 -H "Authorization: Bearer CRON_SECRETUL_TAU" "https://DOMENIUL-TAU.ro/api/cron/ai-pilot" >/dev/null 2>&1
+```
+
+Note:
+
+- folosește exact `Authorization: Bearer <CRON_SECRET>`
+- nu pune secretul în query string
+- poți redirecționa output-ul într-un fișier log în loc de `/dev/null` dacă vrei audit local
 
 ## Verificare
 

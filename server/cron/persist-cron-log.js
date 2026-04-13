@@ -94,6 +94,25 @@ function buildSummaryForStorage(job, body) {
     return {
       batchUsers: r.length,
       items: r.slice(0, 20).map((item) => ({
+        ...(() => {
+          const applied = Array.isArray(item.applied) ? item.applied : [];
+          const slHits = applied.filter((a) => a?.ok && a?.trigger === "sl");
+          const tpHits = applied.filter((a) => a?.ok && a?.trigger === "tp");
+          const events = applied
+            .filter((a) => a?.trigger === "sl" || a?.trigger === "tp")
+            .slice(0, 10)
+            .map((a) => ({
+              pair: a.pair,
+              trigger: a.trigger === "sl" ? "sl_hit" : "tp_hit",
+              price: a.price,
+              ok: a.ok,
+            }));
+          return {
+            slHits: slHits.length,
+            tpHits: tpHits.length,
+            events,
+          };
+        })(),
         userId: item.userId,
         ok: item.ok,
         skipped: item.skipped,

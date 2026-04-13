@@ -9,8 +9,9 @@ import { closeBotOpenPositionMarketOnly } from "@/server/trading/stop-bot";
 import { executeManualTrade } from "@/server/trading/execute-manual";
 import { createPilotStrategyAndBot } from "@/server/ai/pilot-create-bot";
 import { readPilotOpen } from "@/server/ai/pilot-read-open";
-import { runAutopilotManualLiveSellsDecide } from "@/lib/ai/autopilot-manual-live-decide";
 import { buildAiRuntime } from "@/lib/ai/ai-preferences";
+import { runLivePositionProtectAnalysis } from "@/lib/ai/live-position-analyze";
+import Trade from "@/models/Trade";
 
 function normPair(p) {
   return String(p || "")
@@ -81,6 +82,192 @@ function findPilotBotIdOnPair(pilotBots, pairKey) {
     if (normPair(b.pair) === p) return String(b._id);
   }
   return null;
+}
+
+async function enrichAiPilotBuyWithStrategy({
+  userId,
+  pair,
+  buyTradeId,
+  motiv = "",
+  aiRuntime,
+}) {
+  const user = await User.findById(userId);
+  if (!user) return { ok: false, reason: "no_user" };
+  const book = getManualBook(user);
+  const row = book[pair];
+  const qty = Number(row?.qty ?? 0);
+  const avgEntry = Number(row?.avg ?? row?.avgEntry ?? 0);
+  if (!Number.isFinite(qty) || qty <= 1e-12 || !Number.isFinite(avgEntry) || avgEntry <= 0) {
+    return { ok: false, reason: "no_open_position" };
+  }
+
+  let markPrice = null;
+  try {
+    const px = await getPrice(pair);
+    markPrice = Number.isFinite(px) && px > 0 ? px : null;
+  } catch {
+    markPrice = null;
+  }
+
+  let analysis;
+  try {
+    analysis = await runLivePositionProtectAnalysis({
+      pair,
+      avgEntry,
+      qty,
+      markPrice,
+      aiRuntime,
+    });
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+  }
+
+  const live =
+    user.liveProtections && typeof user.liveProtections === "object" && !Array.isArray(user.liveProtections)
+      ? { ...user.liveProtections }
+      : {};
+  live[pair] = {
+    ...(live[pair] && typeof live[pair] === "object" ? live[pair] : {}),
+    stopLoss: analysis.stopLoss,
+    takeProfit: analysis.takeProfit,
+    aiPilotStrategy: {
+      notaExecutive: analysis.notaExecutive,
+      analizaTehnica: analysis.analizaTehnica,
+      analizaFinanciara: analysis.analizaFinanciara,
+      avertismente: analysis.avertismente,
+      indicatoriPeGrafic: analysis.indicatoriPeGrafic,
+      chartOverlaySpecs: analysis.chartOverlaySpecs,
+      source: "ai-pilot-buy",
+      savedAt: new Date().toISOString(),
+    },
+  };
+  user.liveProtections = live;
+  await user.save();
+
+  if (buyTradeId) {
+    const tr = await Trade.findById(buyTradeId);
+    if (tr) {
+      const meta = tr.meta && typeof tr.meta === "object" ? { ...tr.meta } : {};
+      meta.aiPilotControl = true;
+      meta.aiPilotStrategy = {
+        motiv,
+        source: "ai-pilot-buy",
+        stopLoss: analysis.stopLoss,
+        takeProfit: analysis.takeProfit,
+        notaExecutive: analysis.notaExecutive,
+        analizaTehnica: analysis.analizaTehnica,
+        analizaFinanciara: analysis.analizaFinanciara,
+        avertismente: analysis.avertismente,
+        indicatoriPeGrafic: analysis.indicatoriPeGrafic,
+        chartOverlaySpecs: analysis.chartOverlaySpecs,
+      };
+      tr.meta = meta;
+      await tr.save();
+    }
+  }
+
+  return { ok: true, analysis };
+}
+
+async function runManualLiveProtectionsTick({ userId, liveRows, bots }) {
+  let user = await User.findById(userId);
+  if (!user) return { applied: [] };
+  const prot =
+    user.liveProtections && typeof user.liveProtections === "object" && !Array.isArray(user.liveProtections)
+      ? user.liveProtections
+      : {};
+  const applied = [];
+  const aiPilotPairs = new Set();
+  const rows = await Trade.aggregate([
+    {
+      $match: {
+        userId: user._id,
+        tradeSource: "manual",
+        side: "buy",
+        status: { $in: ["filled", "simulated"] },
+      },
+    },
+    { $sort: { createdAt: -1 } },
+    { $group: { _id: "$pair", meta: { $first: "$meta" } } },
+  ]);
+  for (const row of rows) {
+    if (row?.meta && typeof row.meta === "object" && row.meta.aiPilotControl) {
+      aiPilotPairs.add(normPair(row._id));
+    }
+  }
+
+  for (const row of liveRows) {
+    const pair = normPair(row.pereche);
+    if (!aiPilotPairs.has(pair)) continue;
+    const p = prot[pair];
+    if (!p || typeof p !== "object") continue;
+    const stopLoss =
+      p.stopLoss != null && Number.isFinite(Number(p.stopLoss)) ? Number(p.stopLoss) : null;
+    const takeProfit =
+      p.takeProfit != null && Number.isFinite(Number(p.takeProfit)) ? Number(p.takeProfit) : null;
+    if (stopLoss == null && takeProfit == null) continue;
+
+    let price = null;
+    try {
+      const px = await getPrice(pair);
+      price = Number.isFinite(px) && px > 0 ? px : null;
+    } catch {
+      price = null;
+    }
+    if (price == null) continue;
+
+    const hitSl = stopLoss != null && price <= stopLoss;
+    const hitTp = takeProfit != null && price >= takeProfit;
+    if (!hitSl && !hitTp) continue;
+
+    user = await User.findById(userId);
+    const b = getManualBook(user)[pair];
+    const qty = Number(b?.qty ?? 0);
+    const isPaper = Boolean(b?.paper);
+    if (isPaper || !Number.isFinite(qty) || qty <= 1e-12) {
+      applied.push({ tip: "manual_protect", pair, ok: false, detail: "fara_pozitie_live" });
+      continue;
+    }
+
+    const pilotBotIdForSell = findPilotBotIdOnPair(bots, pair);
+    const r = await executeManualTrade({
+      userId,
+      pair,
+      side: "sell",
+      mode: "real",
+      amountBase: qty,
+      fullExit: true,
+      associateBotForControl: true,
+      ...(pilotBotIdForSell ? { pilotBotId: pilotBotIdForSell } : {}),
+    });
+    applied.push({
+      tip: "manual_protect",
+      pair,
+      ok: r.ok,
+      detail: r.error || (hitSl ? "stop_loss_hit" : "take_profit_hit"),
+      trigger: hitSl ? "sl" : "tp",
+      price,
+    });
+  }
+
+  if (applied.some((x) => x.ok)) {
+    const uAfter = await User.findById(userId);
+    if (uAfter) {
+      const live =
+        uAfter.liveProtections &&
+        typeof uAfter.liveProtections === "object" &&
+        !Array.isArray(uAfter.liveProtections)
+          ? { ...uAfter.liveProtections }
+          : {};
+      for (const a of applied) {
+        if (a.ok) delete live[a.pair];
+      }
+      uAfter.liveProtections = live;
+      await uAfter.save();
+    }
+  }
+
+  return { applied };
 }
 
 /**
@@ -430,6 +617,23 @@ export async function runAiPilotForUser(userId) {
       ...(pilotBotIdForBuy ? { pilotBotId: pilotBotIdForBuy } : {}),
     });
     actionsUsed++;
+    if (r.ok && r.trade?._id) {
+      const enrich = await enrichAiPilotBuyWithStrategy({
+        userId,
+        pair,
+        buyTradeId: String(r.trade._id),
+        motiv: String(m.motiv || ""),
+        aiRuntime,
+      });
+      if (!enrich.ok) {
+        applied.push({
+          tip: "manual_cumpara_ai_strategy",
+          pair,
+          ok: false,
+          detail: enrich.reason || "save_strategy_failed",
+        });
+      }
+    }
     applied.push({
       tip: "manual_cumpara",
       pair,
@@ -484,8 +688,6 @@ export async function runAiPilotBatch(opts = {}) {
   return results;
 }
 
-const MAX_MANUAL_LIVE_SELLS_PER_RUN = 5;
-
 /**
  * Cron dedicat: doar poziții manuale Live + decizii AI de vânzare (nu atinge lastRunAt al pilotului principal).
  * @param {string} userId
@@ -510,7 +712,7 @@ export async function runAiPilotManualLiveForUser(userId) {
   }
 
   const cfg = user.aiPilot;
-  const intervalMin = Math.min(30, Math.max(2, Number(cfg.manualLiveIntervalMinutes) || 5));
+  const intervalMin = Math.min(30, Math.max(1, Number(cfg.manualLiveIntervalMinutes) || 5));
   const last = cfg.lastManualLiveRunAt ? new Date(cfg.lastManualLiveRunAt).getTime() : 0;
   const minMs = intervalMin * 60_000;
   if (last && Date.now() - last < minMs) {
@@ -518,7 +720,7 @@ export async function runAiPilotManualLiveForUser(userId) {
   }
 
   user = await User.findById(userId);
-  const liveRows = liveManualPositionsFromUser(user);
+  let liveRows = liveManualPositionsFromUser(user);
   if (!liveRows.length) {
     return { skipped: true, reason: "no_live_manual" };
   }
@@ -537,101 +739,25 @@ export async function runAiPilotManualLiveForUser(userId) {
     return { ok: false, error: "no_api_keys" };
   }
 
-  const pozitii = [];
-  for (const row of liveRows) {
-    let pretPiata = null;
-    let pctDeLaIntrare = null;
-    try {
-      pretPiata = await getPrice(row.pereche);
-      const avg = Number(row.pretMediu) || 0;
-      if (avg > 0 && pretPiata > 0) {
-        pctDeLaIntrare = ((pretPiata - avg) / avg) * 100;
-      }
-    } catch {
-      pretPiata = null;
-    }
-    pozitii.push({
-      pereche: row.pereche,
-      cantitateBaza: row.cantitateBaza,
-      pretMediu: row.pretMediu,
-      pretPiata,
-      pctDeLaIntrare,
-    });
-  }
-
-  const aiRuntime = buildAiRuntime(user);
-  let ai;
-  try {
-    ai = await runAutopilotManualLiveSellsDecide({ pozitii, aiRuntime });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    user.aiPilot.lastManualLiveRunAt = new Date();
-    user.aiPilot.lastManualLiveError = msg;
-    user.aiPilot.lastManualLiveSummary = "";
-    await user.save();
-    return { ok: false, error: msg };
-  }
-
-  const rezumat = String(ai.rezumat || "");
-  const rawVinde = Array.isArray(ai.vinde) ? ai.vinde : [];
-  const allowedPairs = new Set(liveRows.map((r) => normPair(r.pereche)));
-  const applied = [];
-  let sellsDone = 0;
-
-  async function refreshUser() {
-    user = await User.findById(userId);
-    return user;
-  }
-
-  for (const item of rawVinde) {
-    if (sellsDone >= MAX_MANUAL_LIVE_SELLS_PER_RUN) break;
-    const pair = normPair(item?.pereche);
-    if (!pair || !allowedPairs.has(pair)) {
-      applied.push({ tip: "manual_vinde_live", pair: pair || "?", ok: false, detail: "pereche_invalida" });
-      continue;
-    }
-    await refreshUser();
-    const b = getManualBook(user)[pair];
-    const qty = Number(b?.qty ?? 0);
-    const isPaper = Boolean(b?.paper);
-    if (isPaper || !Number.isFinite(qty) || qty <= 1e-12) {
-      applied.push({ tip: "manual_vinde_live", pair, ok: false, detail: "fara_pozitie_live" });
-      continue;
-    }
-
-    const pilotBotIdForSell = findPilotBotIdOnPair(bots, pair);
-    const r = await executeManualTrade({
-      userId,
-      pair,
-      side: "sell",
-      mode: "real",
-      amountBase: qty,
-      fullExit: true,
-      associateBotForControl: true,
-      ...(pilotBotIdForSell ? { pilotBotId: pilotBotIdForSell } : {}),
-    });
-    sellsDone++;
-    applied.push({
-      tip: "manual_vinde_live",
-      pair,
-      ok: r.ok,
-      detail: r.error || "ok",
-      motiv: String(item?.motiv || ""),
-    });
-  }
+  const protections = await runManualLiveProtectionsTick({ userId, liveRows, bots });
+  const sellsDone = protections.applied.filter((x) => x.ok).length;
+  const rezumat =
+    sellsDone > 0
+      ? "Cron la minut: TP/SL executat pe perechi AI Pilot cu strategie salvată."
+      : "Cron la minut: monitorizare TP/SL pe perechi AI Pilot (fără semnal AI nou).";
 
   user = await User.findById(userId);
   user.aiPilot.lastManualLiveRunAt = new Date();
-  user.aiPilot.lastManualLiveSummary = rezumat.slice(0, 4000);
+  user.aiPilot.lastManualLiveSummary = rezumat;
   user.aiPilot.lastManualLiveError = "";
   await user.save();
 
   return {
     ok: true,
     rezumat,
-    applied,
+    applied: protections.applied || [],
     sellsDone,
-    positionsChecked: pozitii.length,
+    positionsChecked: liveRows.length,
   };
 }
 

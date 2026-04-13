@@ -124,13 +124,24 @@ export async function GET(request) {
       { $group: { _id: "$pair", meta: { $first: "$meta" } } },
     ]);
     const pilotPairSet = new Set();
+    const pilotStrategyByPair = new Map();
     for (const row of latestByPair) {
       if (row.meta && typeof row.meta === "object" && row.meta.aiPilotControl) {
-        pilotPairSet.add(normSpotPair(row._id));
+        const pairNorm = normSpotPair(row._id);
+        pilotPairSet.add(pairNorm);
+        if (
+          row.meta.aiPilotStrategy &&
+          typeof row.meta.aiPilotStrategy === "object" &&
+          !pilotStrategyByPair.has(pairNorm)
+        ) {
+          pilotStrategyByPair.set(pairNorm, row.meta.aiPilotStrategy);
+        }
       }
     }
     for (const m of manual) {
-      m.origin = pilotPairSet.has(normSpotPair(m.pair)) ? "pilot" : "user";
+      const pairNorm = normSpotPair(m.pair);
+      m.origin = pilotPairSet.has(pairNorm) ? "pilot" : "user";
+      m.aiPilotStrategy = pilotStrategyByPair.get(pairNorm) || null;
     }
   }
 

@@ -114,13 +114,33 @@ function cronRunSummaryLine(job, summary) {
   }
   if (job === "ai-pilot-manual-live") {
     const u = summary.batchUsers ?? (Array.isArray(summary.items) ? summary.items.length : 0);
-    return `${u} utilizatori · verificare Live manual`;
+    const items = Array.isArray(summary.items) ? summary.items : [];
+    const slHits = items.reduce((acc, it) => acc + (Number(it?.slHits) || 0), 0);
+    const tpHits = items.reduce((acc, it) => acc + (Number(it?.tpHits) || 0), 0);
+    return `${u} utilizatori · SL hit ${slHits} · TP hit ${tpHits}`;
   }
   if (job === "ai-optimize") {
     const t = summary.elitesTried ?? (Array.isArray(summary.items) ? summary.items.length : 0);
     return `${t} conturi elite încercate`;
   }
   return "—";
+}
+
+function cronManualLiveEvents(summary) {
+  const items = Array.isArray(summary?.items) ? summary.items : [];
+  const rows = [];
+  for (const it of items) {
+    const evs = Array.isArray(it?.events) ? it.events : [];
+    for (const ev of evs) {
+      rows.push({
+        userId: it.userId,
+        pair: ev?.pair,
+        trigger: ev?.trigger,
+        price: ev?.price,
+      });
+    }
+  }
+  return rows.slice(0, 6);
 }
 
 export default function AdminAnalyticsPage() {
@@ -464,6 +484,19 @@ export default function AdminAnalyticsPage() {
                             <p className="text-foreground">
                               {cronRunSummaryLine(log.job, log.summary)}
                             </p>
+                            {log.job === "ai-pilot-manual-live" &&
+                            cronManualLiveEvents(log.summary).length > 0 ? (
+                              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                {cronManualLiveEvents(log.summary).map((ev, idx) => (
+                                  <Badge key={`${ev.userId}-${ev.pair}-${idx}`} variant="outline" className="text-[10px]">
+                                    {ev.pair} · {ev.trigger === "sl_hit" ? "SL" : "TP"}
+                                    {Number.isFinite(Number(ev.price))
+                                      ? ` @ ${Number(ev.price).toFixed(4)}`
+                                      : ""}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : null}
                             {log.error ? (
                               <p className="mt-1 line-clamp-2 text-[11px] text-rose-400">{log.error}</p>
                             ) : null}

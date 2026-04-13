@@ -13,6 +13,7 @@ export function AiPilotRunSummary({
   pilotLastManualLiveRun,
   pilotLastManualLiveSummary,
   pilotLastManualLiveError,
+  pilotLastManualLiveEvents = [],
   className,
   variant = "default",
 }) {
@@ -60,6 +61,24 @@ export function AiPilotRunSummary({
         <p className="text-destructive">
           <span className="font-medium">Eroare Live manual:</span> {pilotLastManualLiveError}
         </p>
+      )}
+      {Array.isArray(pilotLastManualLiveEvents) && pilotLastManualLiveEvents.length > 0 && (
+        <div className="space-y-1">
+          <p>
+            <span className={k}>Evenimente cron (TP/SL):</span>
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {pilotLastManualLiveEvents.map((ev, idx) => (
+              <span
+                key={`${ev.pair || "?"}-${ev.trigger || "?"}-${idx}`}
+                className="rounded border border-white/15 bg-white/[0.03] px-1.5 py-0.5 font-mono text-[10px]"
+              >
+                {ev.pair || "?"} · {ev.trigger === "sl_hit" ? "SL" : "TP"}
+                {Number.isFinite(Number(ev.price)) ? ` @ ${Number(ev.price).toFixed(4)}` : ""}
+              </span>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

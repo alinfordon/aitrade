@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Cpu, ExternalLink } from "lucide-react";
+import { Cpu, ExternalLink, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { AiPilotRunSummary } from "@/components/AiPilotRunSummary";
@@ -16,6 +16,7 @@ export function AiPilotDashboardRunPanel() {
   const [lastManualLiveRun, setLastManualLiveRun] = useState(null);
   const [lastManualLiveSummary, setLastManualLiveSummary] = useState("");
   const [lastManualLiveError, setLastManualLiveError] = useState("");
+  const [lastManualLiveEvents, setLastManualLiveEvents] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,6 +34,7 @@ export function AiPilotDashboardRunPanel() {
       setLastManualLiveRun(s.lastManualLiveRunAt || null);
       setLastManualLiveSummary(String(s.lastManualLiveSummary || ""));
       setLastManualLiveError(String(s.lastManualLiveError || ""));
+      setLastManualLiveEvents(Array.isArray(s.lastManualLiveEvents) ? s.lastManualLiveEvents : []);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Pilot AI");
     } finally {
@@ -66,18 +68,31 @@ export function AiPilotDashboardRunPanel() {
             </h2>
           </div>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className="shrink-0 border border-white/10 bg-white/[0.06] text-xs"
-          asChild
-        >
-          <Link href="/ai-pilot#ai-pilot" className="inline-flex items-center gap-1.5">
-            Setări pilot
-            <ExternalLink className="h-3.5 w-3.5 opacity-80" aria-hidden />
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="shrink-0 border-white/15 bg-white/[0.04] text-xs"
+            disabled={loading}
+            onClick={() => void load()}
+          >
+            <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden />
+            Refresh
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="shrink-0 border border-white/10 bg-white/[0.06] text-xs"
+            asChild
+          >
+            <Link href="/ai-pilot#ai-pilot" className="inline-flex items-center gap-1.5">
+              Setări pilot
+              <ExternalLink className="h-3.5 w-3.5 opacity-80" aria-hidden />
+            </Link>
+          </Button>
+        </div>
       </div>
       <div className="px-4 py-4 sm:px-5 sm:py-5">
         {loading ? (
@@ -100,6 +115,7 @@ export function AiPilotDashboardRunPanel() {
               pilotLastManualLiveRun={lastManualLiveRun}
               pilotLastManualLiveSummary={lastManualLiveSummary}
               pilotLastManualLiveError={lastManualLiveError}
+              pilotLastManualLiveEvents={lastManualLiveEvents}
             />
           </div>
         ) : (

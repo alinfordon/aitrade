@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/ai-pilot-manual-live",
-      "schedule": "*/5 * * * *"
+      "schedule": "* * * * *"
     }
   ]
 }

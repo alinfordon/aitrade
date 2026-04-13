@@ -4,9 +4,9 @@ import { runAiPilotManualLiveBatch } from "@/server/ai/pilot-engine";
 import { persistCronRun } from "@/server/cron/persist-cron-log";
 
 /**
- * Verifică pozițiile manuale Spot Live și execută vânzări la recomandarea AI (dacă e cazul).
+ * Verifică la minut pozițiile AI Pilot și aplică strict TP/SL salvat pe pereche (fără decizie AI nouă).
  * Declanșare: același secret ca la celelalte cron-uri (Bearer CRON_SECRET).
- * Throttle per user: `aiPilot.manualLiveIntervalMinutes` (implicit 5).
+ * Throttle per user: `aiPilot.manualLiveIntervalMinutes` (implicit 1).
  */
 export async function GET(request) {
   const t0 = Date.now();
@@ -16,7 +16,21 @@ export async function GET(request) {
 
   try {
     const results = await runAiPilotManualLiveBatch({ limit: 16 });
-    const body = { ok: true, results };
+    const summary = results.reduce(
+      (acc, item) => {
+        const applied = Array.isArray(item?.applied) ? item.applied : [];
+        const sl = applied.filter((a) => a?.ok && a?.trigger === "sl").length;
+        const tp = applied.filter((a) => a?.ok && a?.trigger === "tp").length;
+        acc.slHits += sl;
+        acc.tpHits += tp;
+        if (sl > 0 || tp > 0) {
+          acc.triggeredUsers += 1;
+        }
+        return acc;
+      },
+      { slHits: 0, tpHits: 0, triggeredUsers: 0 }
+    );
+    const body = { ok: true, summary, results };
     await persistCronRun({
       job: "ai-pilot-manual-live",
       ok: true,

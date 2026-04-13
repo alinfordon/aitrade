@@ -3,12 +3,33 @@ import mongoose from "mongoose";
 import { connectDB } from "@/models/db";
 import User from "@/models/User";
 import { Bot } from "@/models";
+import CronRunLog from "@/models/CronRunLog";
 import { requireAuth } from "@/lib/api-helpers";
 import { respondIfMongoMissing } from "@/lib/mongo-env";
 import { aiPilotSettingsSchema } from "@/lib/validations/schemas";
 import { canUseAiPilot } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
+
+function extractLastManualLiveEvents(logs, userId) {
+  const uid = String(userId);
+  for (const log of logs) {
+    const summary = log?.summary;
+    const items = Array.isArray(summary?.items) ? summary.items : [];
+    const mine = items.find((it) => String(it?.userId || "") === uid);
+    if (!mine) continue;
+    const events = Array.isArray(mine.events) ? mine.events : [];
+    return events
+      .filter((e) => e && (e.trigger === "sl_hit" || e.trigger === "tp_hit"))
+      .slice(0, 8)
+      .map((e) => ({
+        pair: e.pair,
+        trigger: e.trigger,
+        price: Number.isFinite(Number(e.price)) ? Number(e.price) : null,
+      }));
+  }
+  return [];
+}
 
 export async function GET() {
   const missing = respondIfMongoMissing();
@@ -28,6 +49,12 @@ export async function GET() {
     .select("_id pair mode status")
     .sort({ updatedAt: -1 })
     .lean();
+  const manualLiveLogs = await CronRunLog.find({ job: "ai-pilot-manual-live" })
+    .sort({ createdAt: -1 })
+    .limit(6)
+    .select("summary")
+    .lean();
+  const lastManualLiveEvents = extractLastManualLiveEvents(manualLiveLogs, session.userId);
 
   const botIdSet = new Set(bots.map((b) => String(b._id)));
   const storedRaw = (pilot.botIds || []).map((id) => String(id));
@@ -64,12 +91,13 @@ export async function GET() {
       lastSummary: String(pilot.lastSummary || ""),
       lastError: String(pilot.lastError || ""),
       manualLiveAiEnabled: Boolean(pilot.manualLiveAiEnabled),
-      manualLiveIntervalMinutes: Math.min(30, Math.max(2, Number(pilot.manualLiveIntervalMinutes) || 5)),
+      manualLiveIntervalMinutes: Math.min(30, Math.max(1, Number(pilot.manualLiveIntervalMinutes) || 5)),
       lastManualLiveRunAt: pilot.lastManualLiveRunAt
         ? new Date(pilot.lastManualLiveRunAt).toISOString()
         : null,
       lastManualLiveSummary: String(pilot.lastManualLiveSummary || ""),
       lastManualLiveError: String(pilot.lastManualLiveError || ""),
+      lastManualLiveEvents,
     },
     bots: bots.map((b) => ({
       id: String(b._id),
@@ -169,7 +197,7 @@ export async function PATCH(request) {
       maxOpenManualPositions: Math.min(20, Math.max(1, Number(ap.maxOpenManualPositions) || 3)),
       maxPilotBots: Math.min(20, Math.max(1, Number(ap.maxPilotBots) || 5)),
       manualLiveAiEnabled: Boolean(ap.manualLiveAiEnabled),
-      manualLiveIntervalMinutes: Math.min(30, Math.max(2, Number(ap.manualLiveIntervalMinutes) || 5)),
+      manualLiveIntervalMinutes: Math.min(30, Math.max(1, Number(ap.manualLiveIntervalMinutes) || 5)),
     },
   });
 }

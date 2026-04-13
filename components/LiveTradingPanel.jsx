@@ -295,6 +295,14 @@ export function LiveTradingPanel() {
     return fullSelectedBot.strategyId.definition ?? null;
   }, [kind, fullSelectedBot]);
 
+  const manualPilotOverlaySpecs = useMemo(() => {
+    if (kind !== "manual" || !selected?.aiPilotStrategy || typeof selected.aiPilotStrategy !== "object") {
+      return null;
+    }
+    const specs = selected.aiPilotStrategy.chartOverlaySpecs;
+    return Array.isArray(specs) && specs.length > 0 ? specs : null;
+  }, [kind, selected]);
+
   const showAdoptInCard =
     kind === "bot" &&
     Boolean(selected?.botId) &&
@@ -1389,7 +1397,7 @@ export function LiveTradingPanel() {
                   aiOverlaySpecs={
                     kind === "manual" && Array.isArray(aiResult?.chartOverlaySpecs) && aiResult.chartOverlaySpecs.length
                       ? aiResult.chartOverlaySpecs
-                      : null
+                      : manualPilotOverlaySpecs
                   }
                   placementMode={kind === "manual" ? placementMode : null}
                   onPlacementConsumed={() => setPlacementMode(null)}
@@ -1580,6 +1588,23 @@ export function LiveTradingPanel() {
                   <p className="text-[11px] leading-snug text-muted-foreground">
                     SL/TP pentru bot sunt procente în strategie; editezi din pagina Bots.
                   </p>
+                ) : null}
+                {kind === "manual" &&
+                selected?.aiPilotStrategy &&
+                typeof selected.aiPilotStrategy === "object" ? (
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.06] px-2.5 py-2 text-[11px] leading-snug">
+                    <p className="font-medium text-amber-100">Strategie AI Pilot (buy)</p>
+                    {selected.aiPilotStrategy.notaExecutive ? (
+                      <p className="mt-1 text-muted-foreground">{selected.aiPilotStrategy.notaExecutive}</p>
+                    ) : null}
+                    {Array.isArray(selected.aiPilotStrategy.chartOverlaySpecs) &&
+                    selected.aiPilotStrategy.chartOverlaySpecs.length > 0 ? (
+                      <p className="mt-1 text-muted-foreground">
+                        Indicatori:{" "}
+                        {selected.aiPilotStrategy.chartOverlaySpecs.map((s) => s.title).join(" · ")}
+                      </p>
+                    ) : null}
+                  </div>
                 ) : null}
               </CardContent>
             </Card>
