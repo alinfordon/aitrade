@@ -29,9 +29,6 @@ export function AiPilotPanel({ className } = {}) {
   const [pilotLastSummary, setPilotLastSummary] = useState("");
   const [pilotLastError, setPilotLastError] = useState("");
   const [pilotLastRun, setPilotLastRun] = useState(null);
-  const [pilotLastManualLiveRun, setPilotLastManualLiveRun] = useState(null);
-  const [pilotLastManualLiveSummary, setPilotLastManualLiveSummary] = useState("");
-  const [pilotLastManualLiveError, setPilotLastManualLiveError] = useState("");
 
   const loadPilot = useCallback(async () => {
     setPilotLoading(true);
@@ -57,9 +54,6 @@ export function AiPilotPanel({ className } = {}) {
       setPilotLastSummary(String(s.lastSummary || ""));
       setPilotLastError(String(s.lastError || ""));
       setPilotLastRun(s.lastRunAt || null);
-      setPilotLastManualLiveRun(s.lastManualLiveRunAt || null);
-      setPilotLastManualLiveSummary(String(s.lastManualLiveSummary || ""));
-      setPilotLastManualLiveError(String(s.lastManualLiveError || ""));
       setPilotSelected(new Set((s.botIds || []).map(String)));
       setPilotBots(Array.isArray(j.bots) ? j.bots : []);
     } catch (e) {
@@ -313,9 +307,6 @@ export function AiPilotPanel({ className } = {}) {
             pilotLastRun={pilotLastRun}
             pilotLastSummary={pilotLastSummary}
             pilotLastError={pilotLastError}
-            pilotLastManualLiveRun={pilotLastManualLiveRun}
-            pilotLastManualLiveSummary={pilotLastManualLiveSummary}
-            pilotLastManualLiveError={pilotLastManualLiveError}
             className="max-w-lg space-y-2 rounded-md border border-border/60 bg-muted/30 p-3 text-xs"
           />
         )}

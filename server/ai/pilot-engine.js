@@ -698,31 +698,22 @@ export async function runAiPilotBatch(opts = {}) {
 }
 
 /**
- * Cron dedicat: doar poziții manuale Live + decizii AI de vânzare (nu atinge lastRunAt al pilotului principal).
+ * Cron dedicat: TP/SL pe poziții manuale Live (independent de toggle-urile AI Pilot).
  * @param {string} userId
  */
 export async function runAiPilotManualLiveForUser(userId) {
   await connectDB();
   let user = await User.findById(userId);
-  if (!user?.aiPilot?.enabled) {
-    return { skipped: true, reason: "disabled" };
-  }
-  if (!user.aiPilot.manualLiveAiEnabled) {
-    return { skipped: true, reason: "manual_live_off" };
-  }
-  if (user.subscriptionPlan !== "pro" && user.subscriptionPlan !== "elite") {
-    return { skipped: true, reason: "plan" };
-  }
-  if (!user.aiPilot.manualTradingEnabled) {
-    return { skipped: true, reason: "manual_trading_off" };
-  }
-  if (user.aiPilot.pilotOrderMode !== "real") {
-    return { skipped: true, reason: "not_real_mode" };
+  if (!user) {
+    return { skipped: true, reason: "user_not_found" };
   }
 
-  const cfg = user.aiPilot;
-  const intervalMin = Math.min(30, Math.max(1, Number(cfg.manualLiveIntervalMinutes) || 5));
-  const last = cfg.lastManualLiveRunAt ? new Date(cfg.lastManualLiveRunAt).getTime() : 0;
+  const cfg = user.manualLiveTpsl && typeof user.manualLiveTpsl === "object" ? user.manualLiveTpsl : {};
+  if (cfg.enabled === false) {
+    return { skipped: true, reason: "manual_live_tpsl_off" };
+  }
+  const intervalMin = Math.min(30, Math.max(1, Number(cfg.intervalMinutes) || 1));
+  const last = cfg.lastRunAt ? new Date(cfg.lastRunAt).getTime() : 0;
   const minMs = intervalMin * 60_000;
   if (last && Date.now() - last < minMs) {
     return { skipped: true, reason: "throttle", nextInMs: minMs - (Date.now() - last) };
@@ -767,9 +758,10 @@ export async function runAiPilotManualLiveForUser(userId) {
   }
 
   if (!user?.apiKeyEncrypted || !user?.apiSecretEncrypted) {
-    user.aiPilot.lastManualLiveRunAt = new Date();
-    user.aiPilot.lastManualLiveError = "Chei API lipsă pentru mod real.";
-    user.aiPilot.lastManualLiveSummary = "";
+    if (!user.manualLiveTpsl || typeof user.manualLiveTpsl !== "object") user.manualLiveTpsl = {};
+    user.manualLiveTpsl.lastRunAt = new Date();
+    user.manualLiveTpsl.lastError = "Chei API lipsă pentru mod real.";
+    user.manualLiveTpsl.lastSummary = "";
     await user.save();
     return { ok: false, error: "no_api_keys" };
   }
@@ -782,9 +774,10 @@ export async function runAiPilotManualLiveForUser(userId) {
       : "Cron la minut: monitorizare TP/SL pe poziții live cu protecții salvate.";
 
   user = await User.findById(userId);
-  user.aiPilot.lastManualLiveRunAt = new Date();
-  user.aiPilot.lastManualLiveSummary = rezumat;
-  user.aiPilot.lastManualLiveError = "";
+  if (!user.manualLiveTpsl || typeof user.manualLiveTpsl !== "object") user.manualLiveTpsl = {};
+  user.manualLiveTpsl.lastRunAt = new Date();
+  user.manualLiveTpsl.lastSummary = rezumat;
+  user.manualLiveTpsl.lastError = "";
   await user.save();
 
   return {
@@ -802,14 +795,10 @@ export async function runAiPilotManualLiveForUser(userId) {
  * @param {{ limit?: number }} opts
  */
 export async function runAiPilotManualLiveBatch(opts = {}) {
-  const limit = Math.min(Math.max(opts.limit ?? 12, 1), 30);
+  const limit = Math.min(Math.max(opts.limit ?? 300, 1), 5000);
   await connectDB();
   const users = await User.find({
-    "aiPilot.enabled": true,
-    "aiPilot.manualLiveAiEnabled": true,
-    "aiPilot.manualTradingEnabled": true,
-    "aiPilot.pilotOrderMode": "real",
-    subscriptionPlan: { $in: ["pro", "elite"] },
+    $or: [{ "manualLiveTpsl.enabled": { $exists: false } }, { "manualLiveTpsl.enabled": true }],
   })
     .limit(limit)
     .select("_id")

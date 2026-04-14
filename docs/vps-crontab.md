@@ -24,7 +24,7 @@ Exemple (înlocuiește `3010`, domeniul nu contează — folosești doar loopbac
 * * * * * curl -fsS --max-time 120 -H "Authorization: Bearer PUNE_AICI_CRON_SECRET" "http://127.0.0.1:3010/api/cron/ai-pilot-manual-live" >/dev/null 2>&1
 
 # AI Pilot Live AI — verificare AI și intervenții, la 5 minute
-*/5 * * * * curl -fsS --max-time 180 -H "Authorization: Bearer PUNE_AICI_CRON_SECRET" "http://127.0.0.1:3010/api/cron/ai-pilot-manual-live-ai" >/dev/null 2>&1
+*/5 * * * * curl -fsS --max-time 180 -H "Authorization: Bearer 56789abcdef" "http://127.0.0.1:3010/api/cron/ai-pilot-manual-live-ai" >/dev/null 2>&1
 
 # AI Pilot — la 15 minute (aliniat cu intervalul din UI)
 */15 * * * * curl -fsS --max-time 180 -H "Authorization: Bearer PUNE_AICI_CRON_SECRET" "http://127.0.0.1:3010/api/cron/ai-pilot" >/dev/null 2>&1

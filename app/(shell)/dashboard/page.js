@@ -25,6 +25,7 @@ import { RealSpotBalancesTable } from "@/components/RealSpotBalancesTable";
 import { UsdcEquityCharts } from "@/components/dashboard/UsdcEquityCharts";
 import { TradeWinLossCharts } from "@/components/dashboard/TradeWinLossCharts";
 import { AiPilotDashboardRunPanel } from "@/components/dashboard/AiPilotDashboardRunPanel";
+import { ManualLiveTpslDashboardPanel } from "@/components/dashboard/ManualLiveTpslDashboardPanel";
 import { AiPilotTradesColumn } from "@/components/AiPilotTradesColumn";
 import { BotsTradesColumn } from "@/components/BotsTradesColumn";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
@@ -250,6 +251,10 @@ export default function DashboardPage() {
         </Card>
 
         <AiPilotDashboardRunPanel />
+      </section>
+
+      <section className="grid grid-cols-1 items-start gap-4">
+        <ManualLiveTpslDashboardPanel />
       </section>
 
       {/* Flux live — poziții deschise pilot & boți */}

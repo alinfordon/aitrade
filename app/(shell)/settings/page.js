@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { AiPilotPanel } from "@/components/AiPilotPanel";
 import { AiModelSettingsCard } from "@/components/AiModelSettingsCard";
 import { BinanceConnectionBadge } from "@/components/BinanceConnectionBadge";
+import { ManualLiveTpslSettingsPanel } from "@/components/ManualLiveTpslSettingsPanel";
 import { RealSpotBalancesTable } from "@/components/RealSpotBalancesTable";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
 import { PageHeader } from "@/components/shell/PageHeader";
@@ -67,6 +68,8 @@ export default function SettingsPage() {
       </Card>
 
       <AiPilotPanel />
+
+      <ManualLiveTpslSettingsPanel />
 
       <AiModelSettingsCard />
 

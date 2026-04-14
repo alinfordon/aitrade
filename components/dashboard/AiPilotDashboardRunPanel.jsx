@@ -11,21 +11,13 @@ export function AiPilotDashboardRunPanel() {
   const [loading, setLoading] = useState(true);
   const [canUse, setCanUse] = useState(false);
   const [pilotEnabled, setPilotEnabled] = useState(false);
+  const [pilotIntervalMinutes, setPilotIntervalMinutes] = useState(15);
+  const [manualLiveIntervalMinutes, setManualLiveIntervalMinutes] = useState(1);
+  const [manualLiveAiEnabled, setManualLiveAiEnabled] = useState(false);
   const [runNowLoading, setRunNowLoading] = useState(false);
   const [lastRun, setLastRun] = useState(null);
   const [lastSummary, setLastSummary] = useState("");
   const [lastError, setLastError] = useState("");
-  const [lastManualLiveRun, setLastManualLiveRun] = useState(null);
-  const [lastManualLiveSummary, setLastManualLiveSummary] = useState("");
-  const [lastManualLiveError, setLastManualLiveError] = useState("");
-  const [lastManualLiveEvents, setLastManualLiveEvents] = useState([]);
-  const [lastManualLiveStats, setLastManualLiveStats] = useState({
-    slHits: 0,
-    tpHits: 0,
-    positionsChecked: 0,
-    liveManualCount: 0,
-    protectedCount: 0,
-  });
   const [lastManualLiveAiStatus, setLastManualLiveAiStatus] = useState({
     runAt: null,
     ok: null,
@@ -49,24 +41,12 @@ export function AiPilotDashboardRunPanel() {
       setCanUse(Boolean(j.canUse));
       const s = j.settings || {};
       setPilotEnabled(Boolean(s.enabled));
+      setPilotIntervalMinutes(Math.max(1, Number(s.intervalMinutes) || 15));
+      setManualLiveIntervalMinutes(Math.max(1, Number(s.manualLiveIntervalMinutes) || 5));
+      setManualLiveAiEnabled(Boolean(s.manualLiveAiEnabled));
       setLastSummary(String(s.lastSummary || ""));
       setLastError(String(s.lastError || ""));
       setLastRun(s.lastRunAt || null);
-      setLastManualLiveRun(s.lastManualLiveRunAt || null);
-      setLastManualLiveSummary(String(s.lastManualLiveSummary || ""));
-      setLastManualLiveError(String(s.lastManualLiveError || ""));
-      setLastManualLiveEvents(Array.isArray(s.lastManualLiveEvents) ? s.lastManualLiveEvents : []);
-      setLastManualLiveStats(
-        s.lastManualLiveStats && typeof s.lastManualLiveStats === "object"
-          ? {
-              slHits: Number(s.lastManualLiveStats.slHits) || 0,
-              tpHits: Number(s.lastManualLiveStats.tpHits) || 0,
-              positionsChecked: Number(s.lastManualLiveStats.positionsChecked) || 0,
-              liveManualCount: Number(s.lastManualLiveStats.liveManualCount) || 0,
-              protectedCount: Number(s.lastManualLiveStats.protectedCount) || 0,
-            }
-          : { slHits: 0, tpHits: 0, positionsChecked: 0, liveManualCount: 0, protectedCount: 0 }
-      );
       setLastManualLiveAiStatus(
         s.lastManualLiveAiStatus && typeof s.lastManualLiveAiStatus === "object"
           ? {
@@ -127,13 +107,7 @@ export function AiPilotDashboardRunPanel() {
     }
   }, [load, pilotEnabled]);
 
-  const hasSummary =
-    lastRun ||
-    lastSummary ||
-    lastError ||
-    lastManualLiveRun ||
-    lastManualLiveSummary ||
-    lastManualLiveError;
+  const hasSummary = lastRun || lastSummary || lastError;
 
   return (
     <div className="fleet-pilot-panel h-full overflow-hidden">
@@ -199,16 +173,22 @@ export function AiPilotDashboardRunPanel() {
           </p>
         ) : hasSummary ? (
           <div className="fleet-pilot-summary">
+            <div className="mb-3 grid gap-1.5 text-[10px] xl:grid-cols-2">
+              <div className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-amber-100">
+                <p>Pilot cron: {pilotEnabled ? `ON · la ${pilotIntervalMinutes}m` : "OFF"}</p>
+              </div>
+              <div className="rounded border border-violet-500/25 bg-violet-500/10 px-2 py-1 text-violet-100">
+                <p>
+                  Live AI:{" "}
+                  {pilotEnabled && manualLiveAiEnabled ? `ON · la ${manualLiveIntervalMinutes}m` : "OFF"}
+                </p>
+              </div>
+            </div>
             <AiPilotRunSummary
               variant="fleet"
               pilotLastRun={lastRun}
               pilotLastSummary={lastSummary}
               pilotLastError={lastError}
-              pilotLastManualLiveRun={lastManualLiveRun}
-              pilotLastManualLiveSummary={lastManualLiveSummary}
-              pilotLastManualLiveError={lastManualLiveError}
-              pilotLastManualLiveEvents={lastManualLiveEvents}
-              pilotLastManualLiveStats={lastManualLiveStats}
               pilotLastManualLiveAiStatus={lastManualLiveAiStatus}
             />
           </div>

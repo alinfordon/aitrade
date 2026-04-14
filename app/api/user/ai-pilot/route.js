@@ -18,6 +18,7 @@ function extractLastManualLiveEvents(logs, userId) {
     const items = Array.isArray(summary?.items) ? summary.items : [];
     const mine = items.find((it) => String(it?.userId || "") === uid);
     if (!mine) continue;
+    if (mine?.skipped && String(mine?.reason || "") === "throttle") continue;
     const events = Array.isArray(mine.events) ? mine.events : [];
     return events
       .filter((e) => e && (e.trigger === "sl_hit" || e.trigger === "tp_hit"))
@@ -38,6 +39,7 @@ function extractLastManualLiveStats(logs, userId) {
     const items = Array.isArray(summary?.items) ? summary.items : [];
     const mine = items.find((it) => String(it?.userId || "") === uid);
     if (!mine) continue;
+    if (mine?.skipped && String(mine?.reason || "") === "throttle") continue;
     return {
       slHits: Number(mine?.slHits) || 0,
       tpHits: Number(mine?.tpHits) || 0,
@@ -47,6 +49,32 @@ function extractLastManualLiveStats(logs, userId) {
     };
   }
   return { slHits: 0, tpHits: 0, positionsChecked: 0, liveManualCount: 0, protectedCount: 0 };
+}
+
+function extractLastManualLiveStatus(logs, userId) {
+  const uid = String(userId);
+  for (const log of logs) {
+    const summary = log?.summary;
+    const items = Array.isArray(summary?.items) ? summary.items : [];
+    const mine = items.find((it) => String(it?.userId || "") === uid);
+    if (!mine) continue;
+    return {
+      runAt: log?.createdAt ? new Date(log.createdAt).toISOString() : null,
+      ok: Boolean(log?.ok),
+      statusCode: Number(log?.statusCode) || null,
+      skipped: Boolean(mine?.skipped),
+      reason: mine?.reason ? String(mine.reason) : "",
+      error: mine?.error ? String(mine.error) : log?.error ? String(log.error) : "",
+    };
+  }
+  return {
+    runAt: null,
+    ok: null,
+    statusCode: null,
+    skipped: false,
+    reason: "",
+    error: "",
+  };
 }
 
 function extractLastManualLiveAiStatus(logs, userId) {
@@ -108,18 +136,25 @@ export async function GET() {
     .select("_id pair mode status")
     .sort({ updatedAt: -1 })
     .lean();
-  const manualLiveLogs = await CronRunLog.find({ job: "ai-pilot-manual-live" })
+  const manualLiveLogs = await CronRunLog.find({
+    job: "ai-pilot-manual-live",
+    "summary.items.userId": String(session.userId),
+  })
     .sort({ createdAt: -1 })
-    .limit(6)
-    .select("summary")
+    .limit(12)
+    .select("summary ok error statusCode createdAt")
     .lean();
-  const manualLiveAiLogs = await CronRunLog.find({ job: "ai-pilot-manual-live-ai" })
+  const manualLiveAiLogs = await CronRunLog.find({
+    job: "ai-pilot-manual-live-ai",
+    "summary.items.userId": String(session.userId),
+  })
     .sort({ createdAt: -1 })
-    .limit(6)
+    .limit(1)
     .select("summary ok error statusCode createdAt")
     .lean();
   const lastManualLiveEvents = extractLastManualLiveEvents(manualLiveLogs, session.userId);
   const lastManualLiveStats = extractLastManualLiveStats(manualLiveLogs, session.userId);
+  const lastManualLiveStatus = extractLastManualLiveStatus(manualLiveLogs, session.userId);
   const lastManualLiveAiStatus = extractLastManualLiveAiStatus(manualLiveAiLogs, session.userId);
 
   const botIdSet = new Set(bots.map((b) => String(b._id)));
@@ -165,6 +200,7 @@ export async function GET() {
       lastManualLiveError: String(pilot.lastManualLiveError || ""),
       lastManualLiveEvents,
       lastManualLiveStats,
+      lastManualLiveStatus,
       lastManualLiveAiStatus,
     },
     bots: bots.map((b) => ({

@@ -29,6 +29,14 @@ const UserSchema = new mongoose.Schema(
     manualSpotBook: { type: mongoose.Schema.Types.Mixed, default: {} },
     /** Ținte afișate pe Live Trading: { "BTC/USDC": { stopLoss?, takeProfit? } } */
     liveProtections: { type: mongoose.Schema.Types.Mixed, default: {} },
+    /** Cron independent TP/SL pe poziții manuale live (fără AI). */
+    manualLiveTpsl: {
+      enabled: { type: Boolean, default: true },
+      intervalMinutes: { type: Number, default: 1 },
+      lastRunAt: { type: Date, default: null },
+      lastSummary: { type: String, default: "" },
+      lastError: { type: String, default: "" },
+    },
     /** Sold paper în USDC (implicit) */
     manualPaperQuoteBalance: { type: Number, default: 10000 },
     /** @deprecated folosește manualPaperQuoteBalance; păstrat pentru migrare */

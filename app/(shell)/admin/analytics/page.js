@@ -98,7 +98,7 @@ const SOURCE_RO = {
 const CRON_JOB_LABEL = {
   "run-bots": "Run bots",
   "ai-pilot": "AI Pilot",
-  "ai-pilot-manual-live": "AI Pilot · Live manual",
+  "ai-pilot-manual-live": "Live manual TP/SL",
   "ai-pilot-manual-live-ai": "AI Pilot · Live AI (5m)",
   "ai-optimize": "AI Optimize",
 };
