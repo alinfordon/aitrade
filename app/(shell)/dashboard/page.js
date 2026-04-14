@@ -26,6 +26,7 @@ import { UsdcEquityCharts } from "@/components/dashboard/UsdcEquityCharts";
 import { TradeWinLossCharts } from "@/components/dashboard/TradeWinLossCharts";
 import { AiPilotDashboardRunPanel } from "@/components/dashboard/AiPilotDashboardRunPanel";
 import { ManualLiveTpslDashboardPanel } from "@/components/dashboard/ManualLiveTpslDashboardPanel";
+import { BotCronStatsPanel } from "@/components/dashboard/BotCronStatsPanel";
 import { AiPilotTradesColumn } from "@/components/AiPilotTradesColumn";
 import { BotsTradesColumn } from "@/components/BotsTradesColumn";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
@@ -253,8 +254,9 @@ export default function DashboardPage() {
         <AiPilotDashboardRunPanel />
       </section>
 
-      <section className="grid grid-cols-1 items-start gap-4">
+      <section className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
         <ManualLiveTpslDashboardPanel />
+        <BotCronStatsPanel />
       </section>
 
       {/* Flux live — poziții deschise pilot & boți */}

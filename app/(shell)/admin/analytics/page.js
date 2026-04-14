@@ -107,7 +107,8 @@ function cronRunSummaryLine(job, summary) {
   if (!summary || typeof summary !== "object") return "—";
   if (job === "run-bots") {
     const n = summary.processed ?? (Array.isArray(summary.items) ? summary.items.length : 0);
-    return `${n} boți în rundă`;
+    const failed = Number(summary?.summary?.failed) || 0;
+    return `${n} boți în rundă · eșec ${failed}`;
   }
   if (job === "ai-pilot") {
     const u = summary.batchUsers ?? (Array.isArray(summary.items) ? summary.items.length : 0);
@@ -148,6 +149,19 @@ function cronManualLiveEvents(summary) {
     }
   }
   return rows.slice(0, 6);
+}
+
+function runBotsTopReasons(summary) {
+  const skipReasons = summary?.summary?.skipReasons && typeof summary.summary.skipReasons === "object"
+    ? summary.summary.skipReasons
+    : {};
+  const actionCounts = summary?.summary?.actionCounts && typeof summary.summary.actionCounts === "object"
+    ? summary.summary.actionCounts
+    : {};
+  const rows = [];
+  for (const [k, v] of Object.entries(actionCounts)) rows.push({ label: `action:${k}`, count: Number(v) || 0 });
+  for (const [k, v] of Object.entries(skipReasons)) rows.push({ label: `skip:${k}`, count: Number(v) || 0 });
+  return rows.sort((a, b) => b.count - a.count).slice(0, 6);
 }
 
 export default function AdminAnalyticsPage() {
@@ -500,6 +514,15 @@ export default function AdminAnalyticsPage() {
                                     {Number.isFinite(Number(ev.price))
                                       ? ` @ ${Number(ev.price).toFixed(4)}`
                                       : ""}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : null}
+                            {log.job === "run-bots" && runBotsTopReasons(log.summary).length > 0 ? (
+                              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                {runBotsTopReasons(log.summary).map((row, idx) => (
+                                  <Badge key={`${row.label}-${idx}`} variant="outline" className="text-[10px]">
+                                    {row.label} · {row.count}
                                   </Badge>
                                 ))}
                               </div>

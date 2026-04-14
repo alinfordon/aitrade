@@ -524,7 +524,11 @@ async function updateUserStats(userId, pnl, win) {
 /** Batch entry for cron: capped per invocation for serverless timeouts. */
 export async function runActiveBotsBatch(limit = 15) {
   await connectDB();
-  const bots = await Bot.find({ status: "active" }).limit(limit).lean();
+  // Fair rotation: prioritize bots that haven't run recently.
+  const bots = await Bot.find({ status: "active" })
+    .sort({ lastRun: 1, _id: 1 })
+    .limit(limit)
+    .lean();
   const results = [];
   for (const b of bots) {
     try {

@@ -46,6 +46,25 @@ function buildSummaryForStorage(job, body) {
     const r = Array.isArray(body.results) ? body.results : [];
     return {
       processed: body.processed ?? r.length,
+      summary:
+        body.summary && typeof body.summary === "object"
+          ? {
+              processed: Number(body.summary.processed) || r.length,
+              failed: Number(body.summary.failed) || 0,
+              actionCounts:
+                body.summary.actionCounts && typeof body.summary.actionCounts === "object"
+                  ? body.summary.actionCounts
+                  : {},
+              skipReasons:
+                body.summary.skipReasons && typeof body.summary.skipReasons === "object"
+                  ? body.summary.skipReasons
+                  : {},
+              errorReasons:
+                body.summary.errorReasons && typeof body.summary.errorReasons === "object"
+                  ? body.summary.errorReasons
+                  : {},
+            }
+          : undefined,
       items: r.slice(0, 24).map((x) => ({
         botId: x.botId,
         ok: x.ok,
