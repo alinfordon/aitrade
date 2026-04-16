@@ -2,7 +2,9 @@ import { connectDB } from "@/models/db";
 import User from "@/models/User";
 import { Bot } from "@/models";
 import { fetchBinanceUsdcGainers } from "@/lib/market/discover-data";
-import { getPrice } from "@/lib/binance/service";
+import { getPrice, getBalance } from "@/lib/binance/service";
+import { decryptSecret } from "@/lib/security/crypto";
+import { getManualPaperQuoteBalance, DEFAULT_QUOTE_ASSET } from "@/lib/market-defaults";
 import { runAutopilotDecide } from "@/lib/ai/autopilot-decide";
 import { tryActivateBot } from "@/server/bots/try-activate-bot";
 import { closeBotOpenPositionMarketOnly } from "@/server/trading/stop-bot";
@@ -373,6 +375,34 @@ export async function runAiPilotForUser(userId, opts = {}) {
     });
   }
 
+  // Pre-check fonduri cotă (USDC) o singură dată pe rulare:
+  // - paper: sold paper din User (migrate-aware)
+  // - real: free quote balance de pe Binance (dacă există chei API)
+  // Scopul: să NU trimitem buy-uri către Binance când nu există capital
+  // și să informăm și AI-ul prin `limite.sumaQuoteDisponibila`.
+  const MIN_NOTIONAL_QUOTE = 2; // Binance min ~1-2 USDC pentru notional spot
+  const SAFETY_BUFFER_PCT = 0.005; // 0.5% buffer pentru fees/slippage la market
+  let freeQuoteAvailable = 0;
+  if (manualEnabled) {
+    if (orderMode === "paper") {
+      freeQuoteAvailable = Math.max(0, Number(getManualPaperQuoteBalance(user)) || 0);
+    } else if (user?.apiKeyEncrypted && user?.apiSecretEncrypted) {
+      try {
+        const ukey = decryptSecret(user.apiKeyEncrypted);
+        const usec = decryptSecret(user.apiSecretEncrypted);
+        if (ukey && usec) {
+          const bal = await getBalance(ukey, usec);
+          const freeObj = bal?.free || bal || {};
+          const raw = Number(freeObj?.[DEFAULT_QUOTE_ASSET] ?? freeObj?.USDC ?? 0);
+          freeQuoteAvailable = Number.isFinite(raw) && raw > 0 ? raw : 0;
+        }
+      } catch {
+        freeQuoteAvailable = 0;
+      }
+    }
+  }
+  let remainingQuote = freeQuoteAvailable;
+
   const limite = {
     maxActiuniManualSiBotNouInTotal: maxTradesPerRun,
     pozitiiManualeCurente: manualOpenCount,
@@ -380,6 +410,8 @@ export async function runAiPilotForUser(userId, opts = {}) {
     tranzactiiManualPermise: manualEnabled,
     creareBotPermisa: createBotEnabled,
     maxBoțiPilotSimultan: maxPilotBots,
+    sumaQuoteDisponibila: Number(freeQuoteAvailable.toFixed(2)),
+    maxUsdcPerOrdinBuy: maxUsdc,
   };
 
   async function refreshUser() {
@@ -606,7 +638,24 @@ export async function runAiPilotForUser(userId, opts = {}) {
     let spend = Number(m.sumaUsdc);
     if (!Number.isFinite(spend) || spend <= 0) spend = maxUsdc;
     spend = Math.min(spend, maxUsdc);
-    if (spend < 2) {
+
+    // Fail-fast: plafon pe fondurile reale/paper disponibile în acest run.
+    // Lăsăm un mic buffer pentru fees/slippage la market orders.
+    const cap = remainingQuote / (1 + SAFETY_BUFFER_PCT);
+    if (cap < MIN_NOTIONAL_QUOTE) {
+      applied.push({
+        tip: "manual_cumpara",
+        pair,
+        ok: false,
+        detail: orderMode === "real" ? "fonduri_USDC_insuficiente" : "paper_USDC_insuficient",
+        available: Number(remainingQuote.toFixed(2)),
+      });
+      // Nu mai încercăm alte buy-uri dacă nu avem capital deloc.
+      if (remainingQuote <= 0) break;
+      continue;
+    }
+    if (spend > cap) spend = cap;
+    if (spend < MIN_NOTIONAL_QUOTE) {
       applied.push({ tip: "manual_cumpara", pair, ok: false, detail: "suma_prea_mica" });
       continue;
     }
@@ -626,6 +675,11 @@ export async function runAiPilotForUser(userId, opts = {}) {
       ...(pilotBotIdForBuy ? { pilotBotId: pilotBotIdForBuy } : {}),
     });
     actionsUsed++;
+    if (r.ok) {
+      const actualCost = Number(r.trade?.quoteQty);
+      const decr = Number.isFinite(actualCost) && actualCost > 0 ? actualCost : spend;
+      remainingQuote = Math.max(0, remainingQuote - decr * (1 + SAFETY_BUFFER_PCT));
+    }
     if (r.ok && r.trade?._id) {
       const enrich = await enrichAiPilotBuyWithStrategy({
         userId,

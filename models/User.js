@@ -70,6 +70,19 @@ const UserSchema = new mongoose.Schema(
       /** Ordine manuale + boti noi creați de pilot */
       pilotOrderMode: { type: String, enum: ["paper", "real"], default: "paper" },
       manualTradingEnabled: { type: Boolean, default: false },
+      /** Guard anti-intrări târzii pe 15m (re-entry după vârf / decelerare). */
+      momentumGuardEnabled: { type: Boolean, default: true },
+      momentumGuardStrictness: {
+        type: String,
+        enum: ["permissive", "balanced", "strict"],
+        default: "balanced",
+      },
+      /** Dacă e true, pragurile numerice de mai jos suprascriu preset-ul de strictness. */
+      momentumGuardCustomEnabled: { type: Boolean, default: false },
+      /** Praguri custom (procente: 0.05 = 0.05%; drawdown exprimat în % clasic, ex 2.5 = -2.5%). */
+      momentumGuardMinLastChangePct: { type: Number, default: null },
+      momentumGuardMinAccelerationPct: { type: Number, default: null },
+      momentumGuardMaxDrawdownFromHighPct: { type: Number, default: null },
       createBotFromAnalysis: { type: Boolean, default: false },
       /** Max acțiuni pe rundă: cumpărare/vânzare manuală + creare bot (nu include activare/pauză bot existent) */
       maxTradesPerRun: { type: Number, default: 3 },

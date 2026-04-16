@@ -184,6 +184,23 @@ export async function GET() {
       maxUsdcPerTrade: Number(pilot.maxUsdcPerTrade) || 150,
       pilotOrderMode: pilot.pilotOrderMode === "real" ? "real" : "paper",
       manualTradingEnabled: Boolean(pilot.manualTradingEnabled),
+      momentumGuardEnabled: pilot.momentumGuardEnabled !== false,
+      momentumGuardStrictness: ["permissive", "balanced", "strict"].includes(String(pilot.momentumGuardStrictness))
+        ? String(pilot.momentumGuardStrictness)
+        : "balanced",
+      momentumGuardCustomEnabled: Boolean(pilot.momentumGuardCustomEnabled),
+      momentumGuardMinLastChangePct:
+        pilot.momentumGuardMinLastChangePct != null && Number.isFinite(Number(pilot.momentumGuardMinLastChangePct))
+          ? Number(pilot.momentumGuardMinLastChangePct)
+          : undefined,
+      momentumGuardMinAccelerationPct:
+        pilot.momentumGuardMinAccelerationPct != null && Number.isFinite(Number(pilot.momentumGuardMinAccelerationPct))
+          ? Number(pilot.momentumGuardMinAccelerationPct)
+          : undefined,
+      momentumGuardMaxDrawdownFromHighPct:
+        pilot.momentumGuardMaxDrawdownFromHighPct != null && Number.isFinite(Number(pilot.momentumGuardMaxDrawdownFromHighPct))
+          ? Number(pilot.momentumGuardMaxDrawdownFromHighPct)
+          : undefined,
       createBotFromAnalysis: Boolean(pilot.createBotFromAnalysis),
       maxTradesPerRun: Math.min(20, Math.max(1, Number(pilot.maxTradesPerRun) || 3)),
       maxOpenManualPositions: Math.min(20, Math.max(1, Number(pilot.maxOpenManualPositions) || 3)),
@@ -271,6 +288,18 @@ export async function PATCH(request) {
   if (patch.botIds != null) $set["aiPilot.botIds"] = oids;
   if (patch.pilotOrderMode != null) $set["aiPilot.pilotOrderMode"] = patch.pilotOrderMode;
   if (patch.manualTradingEnabled != null) $set["aiPilot.manualTradingEnabled"] = patch.manualTradingEnabled;
+  if (patch.momentumGuardEnabled != null) $set["aiPilot.momentumGuardEnabled"] = patch.momentumGuardEnabled;
+  if (patch.momentumGuardStrictness != null) $set["aiPilot.momentumGuardStrictness"] = patch.momentumGuardStrictness;
+  if (patch.momentumGuardCustomEnabled != null) $set["aiPilot.momentumGuardCustomEnabled"] = patch.momentumGuardCustomEnabled;
+  if (patch.momentumGuardMinLastChangePct != null) {
+    $set["aiPilot.momentumGuardMinLastChangePct"] = patch.momentumGuardMinLastChangePct;
+  }
+  if (patch.momentumGuardMinAccelerationPct != null) {
+    $set["aiPilot.momentumGuardMinAccelerationPct"] = patch.momentumGuardMinAccelerationPct;
+  }
+  if (patch.momentumGuardMaxDrawdownFromHighPct != null) {
+    $set["aiPilot.momentumGuardMaxDrawdownFromHighPct"] = patch.momentumGuardMaxDrawdownFromHighPct;
+  }
   if (patch.createBotFromAnalysis != null) $set["aiPilot.createBotFromAnalysis"] = patch.createBotFromAnalysis;
   if (patch.maxTradesPerRun != null) $set["aiPilot.maxTradesPerRun"] = patch.maxTradesPerRun;
   if (patch.maxOpenManualPositions != null) $set["aiPilot.maxOpenManualPositions"] = patch.maxOpenManualPositions;
@@ -296,6 +325,23 @@ export async function PATCH(request) {
       maxUsdcPerTrade: Number(ap.maxUsdcPerTrade) || 150,
       pilotOrderMode: ap.pilotOrderMode === "real" ? "real" : "paper",
       manualTradingEnabled: Boolean(ap.manualTradingEnabled),
+      momentumGuardEnabled: ap.momentumGuardEnabled !== false,
+      momentumGuardStrictness: ["permissive", "balanced", "strict"].includes(String(ap.momentumGuardStrictness))
+        ? String(ap.momentumGuardStrictness)
+        : "balanced",
+      momentumGuardCustomEnabled: Boolean(ap.momentumGuardCustomEnabled),
+      momentumGuardMinLastChangePct:
+        ap.momentumGuardMinLastChangePct != null && Number.isFinite(Number(ap.momentumGuardMinLastChangePct))
+          ? Number(ap.momentumGuardMinLastChangePct)
+          : undefined,
+      momentumGuardMinAccelerationPct:
+        ap.momentumGuardMinAccelerationPct != null && Number.isFinite(Number(ap.momentumGuardMinAccelerationPct))
+          ? Number(ap.momentumGuardMinAccelerationPct)
+          : undefined,
+      momentumGuardMaxDrawdownFromHighPct:
+        ap.momentumGuardMaxDrawdownFromHighPct != null && Number.isFinite(Number(ap.momentumGuardMaxDrawdownFromHighPct))
+          ? Number(ap.momentumGuardMaxDrawdownFromHighPct)
+          : undefined,
       createBotFromAnalysis: Boolean(ap.createBotFromAnalysis),
       maxTradesPerRun: Math.min(20, Math.max(1, Number(ap.maxTradesPerRun) || 3)),
       maxOpenManualPositions: Math.min(20, Math.max(1, Number(ap.maxOpenManualPositions) || 3)),

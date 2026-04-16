@@ -19,6 +19,12 @@ export function AiPilotPanel({ className } = {}) {
   const [pilotMaxUsdc, setPilotMaxUsdc] = useState(150);
   const [pilotOrderMode, setPilotOrderMode] = useState("paper");
   const [pilotManual, setPilotManual] = useState(false);
+  const [pilotMomentumGuardEnabled, setPilotMomentumGuardEnabled] = useState(true);
+  const [pilotMomentumGuardStrictness, setPilotMomentumGuardStrictness] = useState("balanced");
+  const [pilotMomentumGuardCustomEnabled, setPilotMomentumGuardCustomEnabled] = useState(false);
+  const [pilotMomentumGuardMinLastChangePct, setPilotMomentumGuardMinLastChangePct] = useState(0.05);
+  const [pilotMomentumGuardMinAccelerationPct, setPilotMomentumGuardMinAccelerationPct] = useState(-0.05);
+  const [pilotMomentumGuardMaxDrawdownFromHighPct, setPilotMomentumGuardMaxDrawdownFromHighPct] = useState(2.5);
   const [pilotCreateBot, setPilotCreateBot] = useState(false);
   const [pilotMaxTradesRun, setPilotMaxTradesRun] = useState(3);
   const [pilotMaxManualOpen, setPilotMaxManualOpen] = useState(3);
@@ -45,6 +51,24 @@ export function AiPilotPanel({ className } = {}) {
       setPilotMaxUsdc(Number(s.maxUsdcPerTrade) || 150);
       setPilotOrderMode(s.pilotOrderMode === "real" ? "real" : "paper");
       setPilotManual(Boolean(s.manualTradingEnabled));
+      setPilotMomentumGuardEnabled(s.momentumGuardEnabled !== false);
+      setPilotMomentumGuardStrictness(
+        ["permissive", "balanced", "strict"].includes(String(s.momentumGuardStrictness))
+          ? String(s.momentumGuardStrictness)
+          : "balanced"
+      );
+      setPilotMomentumGuardCustomEnabled(Boolean(s.momentumGuardCustomEnabled));
+      setPilotMomentumGuardMinLastChangePct(
+        Number.isFinite(Number(s.momentumGuardMinLastChangePct)) ? Number(s.momentumGuardMinLastChangePct) : 0.05
+      );
+      setPilotMomentumGuardMinAccelerationPct(
+        Number.isFinite(Number(s.momentumGuardMinAccelerationPct)) ? Number(s.momentumGuardMinAccelerationPct) : -0.05
+      );
+      setPilotMomentumGuardMaxDrawdownFromHighPct(
+        Number.isFinite(Number(s.momentumGuardMaxDrawdownFromHighPct))
+          ? Number(s.momentumGuardMaxDrawdownFromHighPct)
+          : 2.5
+      );
       setPilotCreateBot(Boolean(s.createBotFromAnalysis));
       setPilotMaxTradesRun(Math.min(20, Math.max(1, Number(s.maxTradesPerRun) || 3)));
       setPilotMaxManualOpen(Math.min(20, Math.max(1, Number(s.maxOpenManualPositions) || 3)));
@@ -93,6 +117,12 @@ export function AiPilotPanel({ className } = {}) {
           maxUsdcPerTrade: pilotMaxUsdc,
           pilotOrderMode,
           manualTradingEnabled: pilotManual,
+          momentumGuardEnabled: pilotMomentumGuardEnabled,
+          momentumGuardStrictness: pilotMomentumGuardStrictness,
+          momentumGuardCustomEnabled: pilotMomentumGuardCustomEnabled,
+          momentumGuardMinLastChangePct: pilotMomentumGuardMinLastChangePct,
+          momentumGuardMinAccelerationPct: pilotMomentumGuardMinAccelerationPct,
+          momentumGuardMaxDrawdownFromHighPct: pilotMomentumGuardMaxDrawdownFromHighPct,
           createBotFromAnalysis: pilotCreateBot,
           maxTradesPerRun: pilotMaxTradesRun,
           maxOpenManualPositions: pilotMaxManualOpen,
@@ -170,6 +200,79 @@ export function AiPilotPanel({ className } = {}) {
               />
               Tranzacții manuale (cartea spot / Live) orchestrate de pilot
             </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={pilotMomentumGuardEnabled}
+                onChange={(e) => setPilotMomentumGuardEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-input"
+              />
+              Guard anti-intrări târzii pe 15m (re-entry după vârf / decelerare)
+            </label>
+            <div className="space-y-2">
+              <Label>Strictness guard</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
+                value={pilotMomentumGuardStrictness}
+                disabled={!pilotMomentumGuardEnabled}
+                onChange={(e) => setPilotMomentumGuardStrictness(e.target.value)}
+              >
+                <option value="permissive">Permisiv</option>
+                <option value="balanced">Echilibrat</option>
+                <option value="strict">Strict</option>
+              </select>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={pilotMomentumGuardCustomEnabled}
+                disabled={!pilotMomentumGuardEnabled}
+                onChange={(e) => setPilotMomentumGuardCustomEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-input disabled:opacity-50"
+              />
+              Custom thresholds (praguri numeric)
+            </label>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label>Min urcare</Label>
+                <Input
+                  type="number"
+                  step={0.01}
+                  min={0}
+                  max={1}
+                  disabled={!pilotMomentumGuardEnabled || !pilotMomentumGuardCustomEnabled}
+                  value={pilotMomentumGuardMinLastChangePct}
+                  onChange={(e) => setPilotMomentumGuardMinLastChangePct(Number(e.target.value))}
+                />
+                <p className="text-[11px] text-muted-foreground">în % (ex. 0.05)</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Decelerare tolerată</Label>
+                <Input
+                  type="number"
+                  step={0.01}
+                  min={-1}
+                  max={0}
+                  disabled={!pilotMomentumGuardEnabled || !pilotMomentumGuardCustomEnabled}
+                  value={pilotMomentumGuardMinAccelerationPct}
+                  onChange={(e) => setPilotMomentumGuardMinAccelerationPct(Number(e.target.value))}
+                />
+                <p className="text-[11px] text-muted-foreground">în % (negativ)</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Max drawdown</Label>
+                <Input
+                  type="number"
+                  step={0.1}
+                  min={0.1}
+                  max={20}
+                  disabled={!pilotMomentumGuardEnabled || !pilotMomentumGuardCustomEnabled}
+                  value={pilotMomentumGuardMaxDrawdownFromHighPct}
+                  onChange={(e) => setPilotMomentumGuardMaxDrawdownFromHighPct(Number(e.target.value))}
+                />
+                <p className="text-[11px] text-muted-foreground">în % sub vârf</p>
+              </div>
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"

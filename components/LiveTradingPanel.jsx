@@ -1267,7 +1267,7 @@ export function LiveTradingPanel() {
                   </CardTitle>
                   <CardDescription>
                     {kind === "bot"
-                      ? `Strategie „${liveBotContext?.strategyName ?? "—"}”: motorul rulează la cron pe lumânări 1h. Pe grafic: intrare, SL/TP la preț din procentele botului și linii pentru indicatorii din reguli (EMA/SMA/Bollinger unde există). Timeframe-ul graficului poate diferi de 1h.`
+                      ? `Strategie „${liveBotContext?.strategyName ?? "—"}”: motorul rulează la cron pe lumânări 15m pentru intrare și ieșire, cu filtru de trend din 1d. Pe grafic: intrare, SL/TP la preț din procentele botului și linii pentru indicatorii din reguli (EMA/SMA/Bollinger unde există). Timeframe-ul graficului poate diferi de 15m.`
                       : "Istoric REST Binance · lumânări și ultimul preț prin WebSocket. SL/TP pe grafic sau din câmpuri. După „Analiză AI — SL / TP”, indicatorii aleși de model (EMA/SMA/Bollinger) apar pe grafic."}
                   </CardDescription>
                 </div>
@@ -1801,7 +1801,7 @@ export function LiveTradingPanel() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Ce face botul</CardTitle>
                   <CardDescription className="text-xs">
-                    Strategie „{liveBotContext.strategyName ?? "—"}” · motor 1h la cron
+                    Strategie „{liveBotContext.strategyName ?? "—"}” · motor 15m (intrare/ieșire) la cron
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-xs">
@@ -1831,7 +1831,8 @@ export function LiveTradingPanel() {
                     )}
                   </div>
                   <p className="text-[11px] leading-snug text-muted-foreground">
-                    La cron: ~200 lumânări <span className="font-mono">1h</span>.{" "}
+                    La cron: ~200 lumânări <span className="font-mono">15m</span> (intrare/ieșire), cu filtru trend din{" "}
+                    <span className="font-mono">1d</span>.{" "}
                     <strong className="text-foreground">Intrare</strong> când{" "}
                     <span className="text-foreground">toate</span> regulile de intrare sunt îndeplinite;{" "}
                     <strong className="text-foreground">ieșire</strong> la{" "}

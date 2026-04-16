@@ -228,6 +228,28 @@ export async function executeManualTrade({
     await withRetries(() => ex.loadMarkets());
     await syncServerTime(ex);
 
+    // Fail-fast pentru buy real: evităm să trimitem ordin când nu există fonduri.
+    // Economisește call-uri la Binance și evită trade-uri „failed” înregistrate.
+    if (s === "buy") {
+      try {
+        const bal = await withRetries(() => ex.fetchBalance(), { exchange: ex });
+        const { quote: qAsset } = parsePair(pair);
+        const freeObj = bal?.free || bal || {};
+        const freeQ = Number(freeObj?.[qAsset] ?? freeObj?.USDC ?? 0) || 0;
+        const want = Number(spendQuote != null && spendQuote > 0 ? spendQuote : quoteQty);
+        // Lăsăm un buffer mic pentru fees/slippage (market order).
+        const needed = want * 1.005;
+        if (!Number.isFinite(freeQ) || freeQ < Math.max(2, needed)) {
+          return {
+            ok: false,
+            error: `Fonduri ${qAsset} insuficiente: disponibil ${freeQ.toFixed(2)} ${qAsset}, necesar ~${needed.toFixed(2)} ${qAsset}.`,
+          };
+        }
+      } catch {
+        /* Dacă eșuează fetchBalance, lăsăm ordinul să încerce normal (fail-open). */
+      }
+    }
+
     if (s === "buy" && spendQuote != null && spendQuote > 0) {
       if (typeof ex.createMarketBuyOrderWithCost === "function") {
         order = await withRetries(() => ex.createMarketBuyOrderWithCost(pair, spendQuote), {
