@@ -106,12 +106,9 @@ export default function LeaderboardPage() {
                   <tr key={r.userId} className="border-b border-border/60">
                     <td className="py-2 pr-4">{r.rank}</td>
                     <td className="py-2 pr-4">
-                      <div className="flex flex-col gap-0.5">
-                        {r.displayName ? (
-                          <span className="font-medium text-foreground">{r.displayName}</span>
-                        ) : null}
-                        <span className="font-mono text-xs text-muted-foreground">{r.userId}</span>
-                      </div>
+                      <span className="font-medium text-foreground">
+                        {r.displayName || r.email || "Utilizator fără nume"}
+                      </span>
                     </td>
                     <td className="py-2 pr-4">{Number(r.totalProfit).toFixed(4)}</td>
                     <td className="py-2 pr-4">{(Number(r.winRate) * 100).toFixed(1)}%</td>

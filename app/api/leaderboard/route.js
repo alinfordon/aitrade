@@ -5,7 +5,7 @@ import { respondIfMongoMissing } from "@/lib/mongo-env";
 
 export const dynamic = "force-dynamic";
 
-/** Public leaderboard: top traders by modeled performance (no email; displayName optional). */
+/** Public leaderboard: top traders by modeled performance (displayName, fallback email). */
 export async function GET() {
   const missing = respondIfMongoMissing();
   if (missing) return missing;
@@ -15,13 +15,14 @@ export async function GET() {
     const rows = await User.find({})
       .sort({ "stats.totalProfit": -1 })
       .limit(50)
-      .select("stats subscriptionPlan displayName createdAt")
+      .select("stats subscriptionPlan displayName email createdAt")
       .lean();
 
     const ranked = rows.map((u, i) => ({
       rank: i + 1,
       userId: String(u._id),
       displayName: (u.displayName && String(u.displayName).trim()) || "",
+      email: (u.email && String(u.email).trim()) || "",
       totalProfit: u.stats?.totalProfit ?? 0,
       winRate:
         u.stats?.totalTrades > 0 ? (u.stats.winTrades || 0) / u.stats.totalTrades : 0,

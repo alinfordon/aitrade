@@ -148,7 +148,7 @@ function botSlTpAbsoluteFromRow(row) {
 }
 
 export function LiveTradingPanel() {
-  const { loadWallet } = useSpotWallet();
+  const { loadWallet, syncing: walletSyncing } = useSpotWallet();
   const [loading, setLoading] = useState(true);
   const [manual, setManual] = useState([]);
   const [bots, setBots] = useState([]);
@@ -1242,6 +1242,9 @@ export function LiveTradingPanel() {
         <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => refresh()}>
           Reîncarcă
         </Button>
+        {walletSyncing ? (
+          <p className="text-center text-[11px] text-muted-foreground">Wallet syncing…</p>
+        ) : null}
       </div>
 
       <div className="space-y-4 min-w-0">

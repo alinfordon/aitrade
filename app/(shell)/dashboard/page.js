@@ -79,7 +79,7 @@ export default function DashboardPage() {
   const [user, setUser] = useState(null);
   const [bots, setBots] = useState([]);
   const [liveStats, setLiveStats] = useState(null);
-  const { wallet, loadWallet } = useSpotWallet();
+  const { wallet, loading: walletLoading, loadWallet } = useSpotWallet();
 
   useEffect(() => {
     (async () => {
@@ -209,9 +209,10 @@ export default function DashboardPage() {
                 size="sm"
                 variant="secondary"
                 className="border border-white/10 bg-white/5"
+                disabled={walletLoading}
                 onClick={() => loadWallet().catch(() => {})}
               >
-                Reîmprospătează
+                {walletLoading ? "Se încarcă…" : "Reîmprospătează"}
               </Button>
               {!wallet?.hasApiKeys && (
                 <Button type="button" size="sm" variant="outline" className="border-primary/30" asChild>
