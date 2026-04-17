@@ -14,7 +14,8 @@ import { canUseLiveAiAnalysis } from "@/lib/plans";
 import { summarizeStrategyDefinition } from "@/lib/strategy-human-summary";
 import {
   ensureLivePositionsPolling,
-  mergeLivePositionsFromApi,
+  refreshLivePositionsFromServer,
+  useLivePositions,
 } from "@/lib/client/live-positions-store";
 
 const TF_OPTIONS = ["15m", "1h", "4h"];
@@ -149,9 +150,13 @@ function botSlTpAbsoluteFromRow(row) {
 
 export function LiveTradingPanel() {
   const { loadWallet, syncing: walletSyncing } = useSpotWallet();
-  const [loading, setLoading] = useState(true);
-  const [manual, setManual] = useState([]);
-  const [bots, setBots] = useState([]);
+  /**
+   * Pozițiile live vin din store-ul global (polling ~45s + hydrate din localStorage).
+   * UI-ul se sincronizează automat fără `Reîncarcă` când cronul/bot-urile modifică starea.
+   */
+  const { manual, bots } = useLivePositions();
+  const [autoSelected, setAutoSelected] = useState(false);
+  const [initializing, setInitializing] = useState(true);
   /** Toate boturile utilizatorului (inclusiv oprite), pentru „preluare manual”. */
   const [allBots, setAllBots] = useState([]);
   const [adoptingBotId, setAdoptingBotId] = useState(null);
@@ -163,7 +168,6 @@ export function LiveTradingPanel() {
   const [tpInput, setTpInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [closeMode, setCloseMode] = useState("paper");
   /** Implicit activ: la SL/TP se execută market sell (manual sau închidere bot), nu doar afișare. Dezactivare opțională. */
   const [autoProtectExec, setAutoProtectExec] = useState(true);
   const [polledPrice, setPolledPrice] = useState(null);
@@ -213,39 +217,23 @@ export function LiveTradingPanel() {
     ensureLivePositionsPolling();
   }, []);
 
-  const loadPositions = useCallback(async () => {
-    const r = await fetch("/api/live/positions");
-    const j = await r.json();
-    if (!r.ok) {
-      throw new Error(j.error || "Nu s-au putut încărca pozițiile");
-    }
-    mergeLivePositionsFromApi(j);
-    return j;
-  }, []);
-
   const loadBotsCatalog = useCallback(async () => {
     const r = await fetch("/api/bots");
     const j = await r.json();
     if (r.ok) setAllBots(j.bots || []);
   }, []);
 
+  /**
+   * Reîncarcă de la server (deduplicat prin store) + catalogul de boți.
+   * Sincronizarea `selected` cu datele noi se face prin efectul `manual/bots` de mai jos.
+   */
   const refresh = useCallback(async () => {
     try {
-      const j = await loadPositions();
-      setManual(j.manual || []);
-      setBots(j.bots || []);
-      await loadBotsCatalog();
-      setSelected((prev) => {
-        if (!prev) return prev;
-        if (prev.botId) {
-          return j.bots.find((x) => x.botId === prev.botId) ?? null;
-        }
-        return j.manual.find((x) => x.pair === prev.pair) ?? null;
-      });
+      await Promise.all([refreshLivePositionsFromServer(), loadBotsCatalog()]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Eroare reîncărcare");
     }
-  }, [loadPositions, loadBotsCatalog]);
+  }, [loadBotsCatalog]);
 
   const adoptCandidates = useMemo(() => {
     const manualPairs = new Set((manual || []).map((m) => normPair(m.pair)));
@@ -380,56 +368,70 @@ export function LiveTradingPanel() {
     if (!selected) setKind(null);
   }, [selected]);
 
+  /** Garantează un fetch inițial (în paralel cu polling-ul store-ului) + catalogul de boți. */
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      setLoading(true);
       try {
-        const j = await loadPositions();
-        const manualList = j.manual || [];
-        const botList = j.bots || [];
-        setManual(manualList);
-        setBots(botList);
-        await loadBotsCatalog();
-        let wantPair = null;
-        let wantBot = null;
-        if (typeof window !== "undefined") {
-          try {
-            const sp = new URLSearchParams(window.location.search);
-            wantPair = sp.get("pair");
-            wantBot = sp.get("bot") || sp.get("botId");
-          } catch {
-            wantPair = null;
-            wantBot = null;
-          }
-        }
-        const wantNorm = wantPair ? normPair(wantPair) : "";
-        const manualMatch = wantNorm ? manualList.find((m) => normPair(m.pair) === wantNorm) : null;
-        const botMatch = wantBot ? botList.find((b) => String(b.botId) === String(wantBot)) : null;
-        if (botMatch) {
-          setSelected(botMatch);
-          setKind("bot");
-        } else if (manualMatch) {
-          setSelected(manualMatch);
-          setKind("manual");
-        } else {
-          const first = manualList[0] || botList[0];
-          if (first) {
-            if (manualList[0]) {
-              setSelected(manualList[0]);
-              setKind("manual");
-            } else {
-              setSelected(botList[0]);
-              setKind("bot");
-            }
-          }
-        }
+        await Promise.all([refreshLivePositionsFromServer(), loadBotsCatalog()]);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Eroare");
+        if (!cancelled) toast.error(e instanceof Error ? e.message : "Eroare");
       } finally {
-        setLoading(false);
+        if (!cancelled) setInitializing(false);
       }
     })();
-  }, [loadPositions, loadBotsCatalog]);
+    return () => {
+      cancelled = true;
+    };
+  }, [loadBotsCatalog]);
+
+  /** Auto-select o dată: pe baza URL (?pair / ?bot) sau prima poziție disponibilă. */
+  useEffect(() => {
+    if (autoSelected) return;
+    if (initializing) return;
+    let wantPair = null;
+    let wantBot = null;
+    if (typeof window !== "undefined") {
+      try {
+        const sp = new URLSearchParams(window.location.search);
+        wantPair = sp.get("pair");
+        wantBot = sp.get("bot") || sp.get("botId");
+      } catch {
+        /* ignore */
+      }
+    }
+    const wantNorm = wantPair ? normPair(wantPair) : "";
+    const manualMatch = wantNorm ? manual.find((m) => normPair(m.pair) === wantNorm) : null;
+    const botMatch = wantBot ? bots.find((b) => String(b.botId) === String(wantBot)) : null;
+    if (botMatch) {
+      setSelected(botMatch);
+      setKind("bot");
+    } else if (manualMatch) {
+      setSelected(manualMatch);
+      setKind("manual");
+    } else if (manual[0]) {
+      setSelected(manual[0]);
+      setKind("manual");
+    } else if (bots[0]) {
+      setSelected(bots[0]);
+      setKind("bot");
+    }
+    setAutoSelected(true);
+  }, [autoSelected, initializing, manual, bots]);
+
+  /** Ține `selected` sincronizat cu cele mai noi date din store (ex. cron închide poziția). */
+  useEffect(() => {
+    if (!autoSelected) return;
+    setSelected((prev) => {
+      if (!prev) return prev;
+      /** Preview-urile sintetice (adopt candidate) nu au rând în store — nu le atingem. */
+      if (prev.synthetic) return prev;
+      if (prev.botId) {
+        return bots.find((x) => x.botId === prev.botId) ?? null;
+      }
+      return manual.find((x) => x.pair === prev.pair) ?? null;
+    });
+  }, [manual, bots, autoSelected]);
 
   async function adoptManualForBot(botId) {
     setAdoptingBotId(botId);
@@ -443,6 +445,8 @@ export function LiveTradingPanel() {
       toast.success(
         "Poziția manuală e la bot; botul e activ. Închiderea urmează SL/TP și semnalele strategiei (cron)."
       );
+      /** Consumă preview-ul sintetic → rândul real vine din store la sincronizare. */
+      setSelected((prev) => (prev && prev.botId === botId ? { ...prev, synthetic: false } : prev));
       await refresh();
       void loadWallet({ silent: true });
     } finally {
@@ -494,6 +498,8 @@ export function LiveTradingPanel() {
       lastRun: b.lastRun ? new Date(b.lastRun).toISOString() : null,
       risk: b.risk || {},
       side: "buy",
+      /** Preview client-side: botul nu are încă poziție deschisă în `bots`. Nu sincroniza cu store-ul. */
+      synthetic: true,
     });
   }
 
@@ -513,7 +519,17 @@ export function LiveTradingPanel() {
     setPlacementMode(null);
   }, [selected, kind]);
 
-  /** Fallback preț REST când WebSocket-ul nu furnizează ticker (necesar pentru execuție SL/TP). */
+  /**
+   * Fallback preț REST când WebSocket-ul nu furnizează ticker (necesar pentru execuție SL/TP).
+   * Sari peste fetch dacă WS a livrat un preț în ultimele ~6s (evită concurența WS + REST).
+   * Deps: doar perechea + flag-ul futures — nu restartăm intervalul la fiecare refresh de poziție.
+   */
+  const wsLastTickerMsRef = useRef(0);
+  useEffect(() => {
+    if (wsTickerPrice != null && Number.isFinite(wsTickerPrice)) {
+      wsLastTickerMsRef.current = Date.now();
+    }
+  }, [wsTickerPrice]);
   useEffect(() => {
     const pair = selected?.pair;
     if (!pair) {
@@ -523,6 +539,7 @@ export function LiveTradingPanel() {
     const futures = selected?.futuresEnabled === true;
     let cancelled = false;
     const tick = async () => {
+      if (Date.now() - wsLastTickerMsRef.current < 6000) return;
       try {
         const q = new URLSearchParams({ symbol: pair });
         if (futures) q.set("futures", "1");
@@ -541,13 +558,7 @@ export function LiveTradingPanel() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [selected]);
-
-  /** Închiderea trebuie să folosească același mod ca poziția (paper vs real), nu un toggle uitat. */
-  useEffect(() => {
-    if (kind !== "manual" || !selected) return;
-    setCloseMode(selected.paper === true ? "paper" : "real");
-  }, [kind, selected]);
+  }, [selected?.pair, selected?.futuresEnabled]);
 
   /**
    * Manual: preț WS sau polling REST; la SL/TP (câmpuri + salvate) → market sell în modul poziției.
@@ -704,7 +715,24 @@ export function LiveTradingPanel() {
       botSlTpAlertedRef.current.tp = true;
       void triggerBotClose("tp");
     }
-  }, [wsTickerPrice, polledPrice, autoProtectExec, kind, selected, refresh, loadWallet]);
+  }, [
+    wsTickerPrice,
+    polledPrice,
+    autoProtectExec,
+    kind,
+    selected?.botId,
+    selected?.avgEntry,
+    selected?.stopLoss,
+    selected?.takeProfit,
+    selected?.side,
+    selected?.botStatus,
+    selected?.source,
+    selected?.markPrice,
+    selected?.risk?.stopLossPct,
+    selected?.risk?.takeProfitPct,
+    refresh,
+    loadWallet,
+  ]);
 
   const commitProtectFromChart = useCallback(
     async (patch) => {
@@ -894,12 +922,14 @@ export function LiveTradingPanel() {
 
   async function closePosition() {
     if (!selected || kind !== "manual") return;
+    /** Modul de închidere urmează exact modul pozi­ției (paper/real) — fără toggle manual. */
+    const mode = selected.paper === true ? "paper" : "real";
     setClosing(true);
     try {
       const r = await fetch("/api/live/close", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pair: selected.pair, mode: closeMode }),
+        body: JSON.stringify({ pair: selected.pair, mode }),
       });
       const j = await r.json();
       if (!r.ok) {
@@ -938,7 +968,7 @@ export function LiveTradingPanel() {
       ? Number(selected.qty) * Number(selected.avgEntry)
       : null;
 
-  if (loading) {
+  if (!autoSelected) {
     return <p className="text-sm text-muted-foreground">Se încarcă pozițiile…</p>;
   }
 
@@ -1383,7 +1413,7 @@ export function LiveTradingPanel() {
                   </div>
                 )}
                 {kind === "manual" && (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
                       size="sm"
@@ -1401,6 +1431,20 @@ export function LiveTradingPanel() {
                       onClick={() => setPlacementMode((m) => (m === "tp" ? null : "tp"))}
                     >
                       Plasează TP pe grafic
+                    </Button>
+                    <span className="hidden h-6 w-px bg-border sm:inline-block" aria-hidden />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      disabled={closing}
+                      onClick={() => closePosition()}
+                      title={`Market sell pentru toată cantitatea (${selected.paper === true ? "paper" : "real"})`}
+                      className="font-semibold"
+                    >
+                      {closing
+                        ? "Se închide…"
+                        : `Închide poziția · ${fmtQty(selected.qty)} ${selected.pair.split("/")[0]}`}
                     </Button>
                   </div>
                 )}
@@ -1725,7 +1769,7 @@ export function LiveTradingPanel() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Tranzacții bot</CardTitle>
                   <CardDescription className="text-xs">
-                    Ultimele ordine înregistrate de motor (reîmprospătare ~10s)
+                    Ultimele ordine înregistrate de motor (reîmprospătare ~14s)
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
@@ -1976,50 +2020,6 @@ export function LiveTradingPanel() {
               </Card>
             )}
 
-            {kind === "manual" && (
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Închide poziția</CardTitle>
-                  <CardDescription className="text-xs leading-relaxed">
-                    <span className="text-foreground">
-                      Se face <strong>market sell</strong> pentru <strong>întreaga cantitate</strong> din moneda
-                      de bază din carte ({fmtQty(selected.qty)} {selected.pair.split("/")[0]}).
-                    </span>
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={closeMode === "paper" ? "default" : "outline"}
-                      onClick={() => setCloseMode("paper")}
-                    >
-                      Paper
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={closeMode === "real" ? "default" : "outline"}
-                      onClick={() => setCloseMode("real")}
-                    >
-                      Real (Binance)
-                    </Button>
-                  </div>
-                  <Button
-                    type="button"
-                    className="w-full sm:w-auto"
-                    variant="destructive"
-                    disabled={closing}
-                    onClick={() => closePosition()}
-                  >
-                    {closing
-                      ? "…"
-                      : `Închide tot — ${fmtQty(selected.qty)} ${selected.pair.split("/")[0]}`}
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
           </>
         )}
       </div>

@@ -20,6 +20,7 @@ const baseLinks = [
   { href: "/ai-pilot", label: "AI Pilot" },
   { href: "/strategies", label: "Strategies" },
   { href: "/trades", label: "Trades" },
+  { href: "/portfolio", label: "Portofoliu" },
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/settings", label: "Settings" },
 ];

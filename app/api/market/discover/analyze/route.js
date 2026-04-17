@@ -52,12 +52,21 @@ export async function POST() {
 
   try {
     const analysis = await runMarketAiAnalysis({ gainers, trending, aiRuntime });
+    const creds = aiRuntime?.credentials || {};
+    const effectiveModel =
+      aiRuntime.provider === "claude"
+        ? creds.anthropicModel
+        : aiRuntime.provider === "ollama"
+          ? creds.ollamaModel
+          : creds.geminiModel;
     return NextResponse.json({
       analysis,
       meta: {
         generatedAt: new Date().toISOString(),
         gainersCount: gainers.length,
         trendingCount: trending.length,
+        provider: aiRuntime.provider,
+        model: effectiveModel || "",
       },
     });
   } catch (e) {

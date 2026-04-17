@@ -100,6 +100,49 @@ const UserSchema = new mongoose.Schema(
       lastManualLiveSummary: { type: String, default: "" },
       lastManualLiveError: { type: String, default: "" },
     },
+    /**
+     * Portofoliu pe termen lung cu ținte de alocare + alerte de rebalansare.
+     * `targets` suma ~100% (validată la salvare). `manualHoldings` = poziții off-exchange
+     * (hardware wallet, altă bursă) care se adaugă peste spot real pentru totaluri.
+     */
+    portfolio: {
+      /** Moneda de referință pentru valori/cost (momentan locked pe USDC, lăsat extensibil). */
+      quoteAsset: { type: String, enum: ["USDC"], default: "USDC" },
+      /** Toleranță drift peste care se recomandă rebalansare (în puncte procentuale absolute). */
+      tolerancePct: { type: Number, default: 5, min: 0.5, max: 30 },
+      /** Prag sub care un activ e considerat „praf” (ascuns din tabelul principal, grupat separat). */
+      dustThresholdUsd: { type: Number, default: 1, min: 0, max: 1000 },
+      includeRealSpot: { type: Boolean, default: true },
+      includeManual: { type: Boolean, default: true },
+      targets: {
+        type: [
+          new mongoose.Schema(
+            {
+              symbol: { type: String, required: true, uppercase: true, trim: true },
+              targetPct: { type: Number, required: true, min: 0, max: 100 },
+              note: { type: String, default: "", trim: true },
+            },
+            { _id: false }
+          ),
+        ],
+        default: [],
+      },
+      manualHoldings: {
+        type: [
+          new mongoose.Schema(
+            {
+              symbol: { type: String, required: true, uppercase: true, trim: true },
+              quantity: { type: Number, required: true, min: 0 },
+              avgCost: { type: Number, default: 0, min: 0 },
+              note: { type: String, default: "", trim: true },
+            },
+            { _id: false }
+          ),
+        ],
+        default: [],
+      },
+      updatedAt: { type: Date, default: null },
+    },
   },
   { timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" } }
 );

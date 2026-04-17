@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shell/PageHeader";
+import "@/app/(shell)/discover/discover-dashboard.css";
 
 function fmtPct(n) {
   if (n == null || !Number.isFinite(n)) return "—";
@@ -29,12 +30,30 @@ function fmtVol(n) {
   return n.toFixed(0);
 }
 
+const PROVIDER_LABEL = {
+  gemini: "Gemini",
+  claude: "Claude",
+  ollama: "Ollama",
+};
+
+/** @param {{provider?: string, model?: string} | null | undefined} info */
+function formatAiBadge(info) {
+  const provider = info?.provider && PROVIDER_LABEL[info.provider] ? PROVIDER_LABEL[info.provider] : null;
+  const model = typeof info?.model === "string" ? info.model.trim() : "";
+  if (provider && model) return `${provider} · ${model}`;
+  if (provider) return provider;
+  if (model) return model;
+  return "AI";
+}
+
 export default function DiscoverPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiPayload, setAiPayload] = useState(null);
   const [aiError, setAiError] = useState(null);
+  /** Provider+model selectate în /settings, încărcate o dată la montare (actualizate după fiecare analiză). */
+  const [aiInfo, setAiInfo] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -57,6 +76,31 @@ export default function DiscoverPage() {
     })();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/user/ai-settings");
+        if (!r.ok) return;
+        const j = await r.json();
+        const s = j?.settings;
+        if (!s || cancelled) return;
+        const model =
+          s.provider === "claude"
+            ? s.anthropicModel
+            : s.provider === "ollama"
+              ? s.ollamaModel
+              : s.geminiModel;
+        setAiInfo({ provider: s.provider, model: String(model || "") });
+      } catch {
+        /** Ignorăm: badge-ul cade pe fallback „AI”. */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function runAiAnalyze() {
     setAiLoading(true);
     setAiError(null);
@@ -74,6 +118,9 @@ export default function DiscoverPage() {
         return;
       }
       setAiPayload(j);
+      if (j?.meta?.provider) {
+        setAiInfo({ provider: j.meta.provider, model: String(j.meta.model || "") });
+      }
       toast.success("Analiză AI generată");
     } catch {
       setAiError("Eroare rețea");
@@ -87,19 +134,38 @@ export default function DiscoverPage() {
   const analysis = aiPayload?.analysis;
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title="Descoperă piața"
-        description="Creșteri spot Binance (USDC), Binance Alpha (tokenuri noi), tendințe CoinGecko și analiză AI cu Gemini unde e configurată cheia."
-      />
+    <div className="discover-dashboard space-y-8">
+      <header className="discover-hero">
+        <div className="discover-hero-inner">
+          <PageHeader
+            title="Descoperă piața"
+            description="Creșteri spot Binance (USDC), tendințe CoinGecko și analiză AI educativă — toate într-un singur loc."
+          />
+        </div>
+      </header>
 
-      <Card className="border-primary/25 bg-gradient-to-br from-card/90 via-primary/[0.07] to-accent/[0.05]">
+      <Card className="discover-ai-card">
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <CardTitle>Analiză AI (Gemini)</CardTitle>
+            <CardTitle className="flex flex-wrap items-center gap-2">
+              <span>Analiză AI</span>
+              <Badge
+                variant="outline"
+                className="border-sky-400/40 font-mono text-[10px] font-normal text-sky-200"
+                title={
+                  aiInfo?.provider
+                    ? `Provider: ${PROVIDER_LABEL[aiInfo.provider] || aiInfo.provider}${
+                        aiInfo?.model ? ` · Model: ${aiInfo.model}` : ""
+                      }`
+                    : "Configurează providerul AI în Setări"
+                }
+              >
+                {formatAiBadge(aiInfo)}
+              </Badge>
+            </CardTitle>
             <CardDescription>
-              Sinteză educativă: tendință de piață, limitări analiză tehnică din datele disponibile, riscuri și idei de urmărit — nu
-              înlocuiește consiliere financiară.
+              Sinteză educativă: tendință de piață, limitări analiză tehnică din datele disponibile, riscuri și
+              idei de urmărit — nu înlocuiește consiliere financiară.
             </CardDescription>
           </div>
           <Button type="button" onClick={() => runAiAnalyze()} disabled={aiLoading}>
@@ -110,7 +176,7 @@ export default function DiscoverPage() {
           {aiError && <p className="text-sm text-destructive">{aiError}</p>}
           {!analysis && !aiError && !aiLoading && (
             <p className="text-sm text-muted-foreground">
-              Folosește butonul pentru o analiză nouă pe baza listelor de mai jos (date reîmprospătate la cerere). 
+              Folosește butonul pentru o analiză nouă pe baza listelor de mai jos (date reîmprospătate la cerere).
             </p>
           )}
           {analysis && (
@@ -136,13 +202,17 @@ export default function DiscoverPage() {
                 {analysis.analizaTehnica && (
                   <div className="rounded-lg border border-border/80 bg-background/60 p-3">
                     <div className="mb-1.5 text-sm font-medium">Analiză tehnică (din date limitate)</div>
-                    <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">{analysis.analizaTehnica}</p>
+                    <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">
+                      {analysis.analizaTehnica}
+                    </p>
                   </div>
                 )}
                 {analysis.analizaFinanciara && (
                   <div className="rounded-lg border border-border/80 bg-background/60 p-3">
                     <div className="mb-1.5 text-sm font-medium">Analiză financiară / risc</div>
-                    <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">{analysis.analizaFinanciara}</p>
+                    <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">
+                      {analysis.analizaFinanciara}
+                    </p>
                   </div>
                 )}
               </div>
@@ -150,8 +220,8 @@ export default function DiscoverPage() {
                 <div>
                   <div className="mb-2 font-medium">Recomandări orientative</div>
                   <div className="overflow-x-auto rounded-md border border-border">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-muted/80 text-muted-foreground">
+                    <table className="discover-row-hover w-full text-left text-sm">
+                      <thead className="bg-muted/60 text-muted-foreground">
                         <tr>
                           <th className="px-3 py-2">Simbol</th>
                           <th className="px-3 py-2">Pereche</th>
@@ -164,7 +234,8 @@ export default function DiscoverPage() {
                       </thead>
                       <tbody>
                         {analysis.recomandari.map((rec, idx) => {
-                          const pair = rec.pereche || (rec.simbol ? `${String(rec.simbol).toUpperCase()}/USDC` : null);
+                          const pair =
+                            rec.pereche || (rec.simbol ? `${String(rec.simbol).toUpperCase()}/USDC` : null);
                           const act = String(rec.actiune || "").toLowerCase();
                           return (
                             <tr key={idx} className="border-t border-border/60">
@@ -186,7 +257,9 @@ export default function DiscoverPage() {
                               </td>
                               <td className="px-3 py-2">{rec.horizon || "—"}</td>
                               <td className="px-3 py-2">{rec.risc || "—"}</td>
-                              <td className="max-w-[240px] px-3 py-2 text-muted-foreground">{rec.motiv || "—"}</td>
+                              <td className="max-w-[240px] px-3 py-2 text-muted-foreground">
+                                {rec.motiv || "—"}
+                              </td>
                               <td className="px-2 py-2">
                                 {pair && pair.includes("/") ? (
                                   <Button variant="ghost" size="sm" className="h-8" asChild>
@@ -217,18 +290,25 @@ export default function DiscoverPage() {
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>În creștere (24h)</CardTitle>
+        <Card className="discover-card-shell">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <span>În creștere (24h)</span>
+              {!loading && (
+                <Badge variant="secondary" className="font-normal">
+                  {data?.gainers?.length ?? 0}
+                </Badge>
+              )}
+            </CardTitle>
             <CardDescription>{disc?.gainers}</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
               <p className="text-sm text-muted-foreground">Se încarcă…</p>
             ) : (
-              <div className="max-h-[480px] overflow-auto rounded-md border border-border">
-                <table className="w-full text-left text-sm">
-                  <thead className="sticky top-0 bg-muted/80">
+              <div className="max-h-[520px] overflow-auto rounded-md border border-border/70">
+                <table className="discover-row-hover w-full text-left text-sm">
+                  <thead className="sticky top-0 bg-muted/70 backdrop-blur">
                     <tr className="text-muted-foreground">
                       <th className="px-3 py-2">Pereche</th>
                       <th className="px-3 py-2">Preț</th>
@@ -245,7 +325,9 @@ export default function DiscoverPage() {
                           <td className="px-3 py-1.5 font-mono">{fmtPrice(row.lastPrice)}</td>
                           <td
                             className={`px-3 py-1.5 font-mono ${
-                              row.pct24h >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
+                              row.pct24h >= 0
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-red-600 dark:text-red-400"
                             }`}
                           >
                             {fmtPct(row.pct24h)}
@@ -255,9 +337,7 @@ export default function DiscoverPage() {
                           </td>
                           <td className="px-2 py-1.5">
                             <Button variant="ghost" size="sm" className="h-8 px-2" asChild>
-                              <Link
-                                href={`/trading?pair=${encodeURIComponent(row.pair)}&from=discover`}
-                              >
+                              <Link href={`/trading?pair=${encodeURIComponent(row.pair)}&from=discover`}>
                                 Trading
                               </Link>
                             </Button>
@@ -278,23 +358,30 @@ export default function DiscoverPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>În tendință & proiecte căutate</CardTitle>
+        <Card className="discover-card-shell">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <span>În tendință & proiecte căutate</span>
+              {!loading && (
+                <Badge variant="secondary" className="font-normal">
+                  {data?.trending?.length ?? 0}
+                </Badge>
+              )}
+            </CardTitle>
             <CardDescription>{disc?.trending}</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
               <p className="text-sm text-muted-foreground">Se încarcă…</p>
             ) : (
-              <div className="max-h-[480px] space-y-2 overflow-auto pr-1">
+              <div className="max-h-[520px] space-y-2 overflow-auto pr-1">
                 {(data?.trending || []).length ? (
                   data.trending.map((c) => {
                     const spotPair = c.spotPair || null;
                     return (
                       <div
                         key={c.id}
-                        className="flex items-center gap-3 rounded-lg border border-border/70 bg-card/50 px-3 py-2"
+                        className="flex items-center gap-3 rounded-lg border border-border/70 bg-card/40 px-3 py-2 transition-colors hover:border-sky-500/25 hover:bg-card/60"
                       >
                         {c.thumb ? (
                           <Image
@@ -306,7 +393,9 @@ export default function DiscoverPage() {
                             unoptimized
                           />
                         ) : (
-                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-xs">?</div>
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-xs">
+                            ?
+                          </div>
                         )}
                         <div className="min-w-0 flex-1">
                           <div className="truncate font-medium">{c.name}</div>
@@ -333,9 +422,7 @@ export default function DiscoverPage() {
                         </div>
                         {spotPair ? (
                           <Button variant="outline" size="sm" className="shrink-0" asChild>
-                            <Link
-                              href={`/trading?pair=${encodeURIComponent(spotPair)}&from=discover`}
-                            >
+                            <Link href={`/trading?pair=${encodeURIComponent(spotPair)}&from=discover`}>
                               Încearcă
                             </Link>
                           </Button>
@@ -354,7 +441,9 @@ export default function DiscoverPage() {
                     );
                   })
                 ) : (
-                  <p className="text-sm text-muted-foreground">Nu s-au putut încărca tendințele CoinGecko.</p>
+                  <p className="text-sm text-muted-foreground">
+                    Nu s-au putut încărca tendințele CoinGecko.
+                  </p>
                 )}
               </div>
             )}
@@ -362,130 +451,9 @@ export default function DiscoverPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Binance Alpha</CardTitle>
-          <CardDescription className="space-y-1">
-            <span>{disc?.alpha}</span>{" "}
-            <a
-              href="https://www.binance.com/en/alpha"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-primary underline underline-offset-2"
-            >
-              Deschide Binance Alpha
-            </a>
-            {" · "}Top după volum 24h (din lista publică API).
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Se încarcă…</p>
-          ) : (
-            <div className="max-h-[520px] overflow-auto rounded-md border border-border">
-              <table className="w-full text-left text-sm">
-                <thead className="sticky top-0 bg-muted/80">
-                  <tr className="text-muted-foreground">
-                    <th className="px-3 py-2">Token</th>
-                    <th className="px-3 py-2">Rețea</th>
-                    <th className="px-3 py-2">Preț</th>
-                    <th className="px-3 py-2">24h</th>
-                    <th className="px-3 py-2">Vol. ~24h</th>
-                    <th className="px-3 py-2">Mc. ~</th>
-                    <th className="px-3 py-2">Notă</th>
-                    <th className="px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data?.alpha || []).length ? (
-                    data.alpha.map((row) => {
-                      const usdcPair = `${row.symbol}/USDC`;
-                      return (
-                        <tr key={`${row.tokenId || row.symbol}-${row.chainName}`} className="border-t border-border/60">
-                          <td className="px-3 py-1.5">
-                            <div className="flex items-center gap-2">
-                              {row.iconUrl ? (
-                                <Image
-                                  src={row.iconUrl}
-                                  alt=""
-                                  width={28}
-                                  height={28}
-                                  className="h-7 w-7 rounded-full"
-                                  unoptimized
-                                />
-                              ) : (
-                                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-[10px]">
-                                  {row.symbol.slice(0, 2)}
-                                </div>
-                              )}
-                              <div className="min-w-0">
-                                <div className="font-medium">{row.symbol}</div>
-                                <div className="truncate text-xs text-muted-foreground">{row.name}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-3 py-1.5 text-xs text-muted-foreground">{row.chainName || "—"}</td>
-                          <td className="px-3 py-1.5 font-mono">{fmtPrice(row.price)}</td>
-                          <td
-                            className={`px-3 py-1.5 font-mono ${
-                              row.pct24h == null
-                                ? ""
-                                : row.pct24h >= 0
-                                  ? "text-emerald-600 dark:text-emerald-400"
-                                  : "text-red-600 dark:text-red-400"
-                            }`}
-                          >
-                            {row.pct24h == null ? "—" : fmtPct(row.pct24h)}
-                          </td>
-                          <td className="px-3 py-1.5 font-mono text-muted-foreground">
-                            {fmtVol(row.volume24h)}
-                          </td>
-                          <td className="px-3 py-1.5 font-mono text-muted-foreground">
-                            {fmtVol(row.marketCap)}
-                          </td>
-                          <td className="px-3 py-1.5">
-                            <div className="flex flex-wrap gap-1">
-                              {row.hotTag ? (
-                                <Badge variant="outline" className="text-[10px]">
-                                  Hot
-                                </Badge>
-                              ) : null}
-                              {row.listingCex ? (
-                                <Badge variant="secondary" className="text-[10px]">
-                                  CEX
-                                </Badge>
-                              ) : null}
-                              {row.alphaId ? (
-                                <span className="font-mono text-[10px] text-muted-foreground">{row.alphaId}</span>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <Button variant="ghost" size="sm" className="h-8 px-2" asChild>
-                              <Link href={`/trading?pair=${encodeURIComponent(usdcPair)}&from=discover`}>
-                                USDC
-                              </Link>
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">
-                        Nu sunt date Alpha (verifică mesajele de eroare de sus, dacă apar).
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       <p className="text-xs text-muted-foreground">
-        Nu este sfat financiar. Criptomonedele sunt volatile; tendințele CoinGecko reflectă interesul pieței, nu garanții de preț.
+        Nu este sfat financiar. Criptomonedele sunt volatile; tendințele CoinGecko reflectă interesul pieței, nu
+        garanții de preț.
       </p>
     </div>
   );

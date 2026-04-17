@@ -255,14 +255,16 @@ export default function TradesPage() {
                   <td className="py-2 pr-4">{Number(t.quantity).toFixed(6)}</td>
                   <td className="py-2 pr-4">{Number(t.price).toFixed(4)}</td>
                   <td className="py-2 pr-4">
-                    {t.pnl != null ? (
+                    {t.side === "buy" ? (
+                      <span className="font-semibold text-amber-300">
+                        {(Number(t.quantity) * Number(t.price)).toFixed(4)}
+                      </span>
+                    ) : t.pnl != null ? (
                       <span
                         className={
-                          t.side === "buy"
-                            ? "font-semibold text-amber-300"
-                            : Number(t.pnl) >= 0
-                              ? "font-semibold text-emerald-400"
-                              : "font-semibold text-rose-400"
+                          Number(t.pnl) >= 0
+                            ? "font-semibold text-emerald-400"
+                            : "font-semibold text-rose-400"
                         }
                       >
                         {Number(t.pnl) >= 0 ? "+" : ""}

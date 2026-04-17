@@ -1,0 +1,128 @@
+.portfolio-dashboard {
+  --portfolio-line: rgba(255, 255, 255, 0.08);
+  --portfolio-glass: rgba(15, 23, 42, 0.56);
+  --portfolio-accent-glow: rgba(168, 85, 247, 0.22);
+}
+
+.portfolio-dashboard::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.2;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 85% 55% at 50% -5%, black 18%, transparent 72%);
+}
+
+.portfolio-dashboard > * {
+  position: relative;
+  z-index: 1;
+}
+
+.portfolio-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  border: 1px solid var(--portfolio-line);
+  background:
+    linear-gradient(145deg, rgba(168, 85, 247, 0.08) 0%, transparent 42%),
+    linear-gradient(180deg, var(--portfolio-glass) 0%, rgba(2, 6, 23, 0.35) 100%);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 24px 80px -24px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.portfolio-hero-inner {
+  padding: 1.2rem 1.25rem 1.35rem;
+}
+
+.portfolio-card-shell {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.62), rgba(2, 6, 23, 0.4));
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.28),
+    0 18px 48px -18px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+}
+
+.portfolio-card-shell:hover {
+  border-color: rgba(168, 85, 247, 0.22) !important;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.3),
+    0 22px 56px -16px rgba(0, 0, 0, 0.58),
+    0 0 40px -22px var(--portfolio-accent-glow);
+}
+
+.portfolio-kpi-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 768px) {
+  .portfolio-kpi-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.portfolio-kpi {
+  border-radius: 0.875rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.85rem 0.95rem;
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.55), rgba(2, 6, 23, 0.3));
+}
+
+.portfolio-kpi-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(var(--muted-foreground));
+}
+
+.portfolio-kpi-value {
+  margin-top: 0.2rem;
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.portfolio-bar-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.portfolio-bar-current {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, rgba(168, 85, 247, 0.7), rgba(56, 189, 248, 0.7));
+  border-radius: 999px;
+}
+
+.portfolio-bar-target {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: rgba(251, 191, 36, 0.95);
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.6);
+}
+
+.portfolio-action-buy {
+  color: rgb(52, 211, 153);
+}
+
+.portfolio-action-sell {
+  color: rgb(248, 113, 113);
+}
+
+.portfolio-action-hold {
+  color: hsl(var(--muted-foreground));
+}
