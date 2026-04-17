@@ -20,6 +20,17 @@ import {
 
 const TF_OPTIONS = ["15m", "1h", "4h"];
 
+/** Indicatori pe care userul îi poate activa manual pentru orientare vizuală. */
+const USER_INDICATOR_OPTIONS = [
+  { id: "ema:20", kind: "ema", period: 20, label: "EMA 20" },
+  { id: "ema:50", kind: "ema", period: 50, label: "EMA 50" },
+  { id: "ema:200", kind: "ema", period: 200, label: "EMA 200" },
+  { id: "sma:50", kind: "sma", period: 50, label: "SMA 50" },
+  { id: "sma:200", kind: "sma", period: 200, label: "SMA 200" },
+  { id: "bb:20:2", kind: "bb", period: 20, mult: 2, label: "Bollinger 20" },
+];
+const USER_INDICATOR_PALETTE = ["#a78bfa", "#fbbf24", "#22d3ee", "#f472b6", "#fb923c", "#4ade80"];
+
 const STRATEGY_SOURCE_LABELS = {
   user: "Definită manual",
   optimized: "Optimizată (AI)",
@@ -177,6 +188,10 @@ export function LiveTradingPanel() {
   const selectedRef = useRef(null);
   const kindRef = useRef(kind);
   const [placementMode, setPlacementMode] = useState(null);
+  const [userIndicatorIds, setUserIndicatorIds] = useState([]);
+  const [trendLines, setTrendLines] = useState([]);
+  const [drawingTrend, setDrawingTrend] = useState(false);
+  const [trendDraft, setTrendDraft] = useState(null);
   const [wsTickerPrice, setWsTickerPrice] = useState(null);
   const [wsStatus, setWsStatus] = useState(null);
   const [subscriptionPlan, setSubscriptionPlan] = useState(null);
@@ -505,7 +520,114 @@ export function LiveTradingPanel() {
 
   useEffect(() => {
     setWsTickerPrice(null);
+    setTrendLines([]);
+    setTrendDraft(null);
+    setDrawingTrend(false);
   }, [selected?.pair]);
+
+  useEffect(() => {
+    setTrendDraft(null);
+  }, [timeframe, kind]);
+
+  const userIndicatorSpecs = useMemo(() => {
+    return userIndicatorIds
+      .map((id, i) => {
+        const def = USER_INDICATOR_OPTIONS.find((o) => o.id === id);
+        if (!def) return null;
+        const color = USER_INDICATOR_PALETTE[i % USER_INDICATOR_PALETTE.length];
+        if (def.kind === "ema") {
+          return { key: id, kind: "ema", period: def.period, color, title: `EMA ${def.period}` };
+        }
+        if (def.kind === "sma") {
+          return { key: id, kind: "sma", period: def.period, color, title: `SMA ${def.period}` };
+        }
+        if (def.kind === "bb") {
+          return {
+            key: id,
+            kind: "bb",
+            period: def.period,
+            mult: def.mult ?? 2,
+            color,
+            title: `Bollinger ${def.period}`,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }, [userIndicatorIds]);
+
+  const toggleUserIndicator = useCallback((id) => {
+    setUserIndicatorIds((arr) => (arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]));
+  }, []);
+
+  const toggleDrawingTrend = useCallback(() => {
+    setDrawingTrend((v) => {
+      if (v) setTrendDraft(null);
+      return !v;
+    });
+    setPlacementMode(null);
+  }, []);
+
+  const handleTrendPointPicked = useCallback(
+    (pt) => {
+      if (!pt || !Number.isFinite(Number(pt.time)) || !Number.isFinite(Number(pt.price))) return;
+      setTrendDraft((draft) => {
+        if (!draft) {
+          toast.message("Primul punct fixat. Click pentru al doilea punct.");
+          return pt;
+        }
+        const a = Number(draft.time) <= Number(pt.time) ? draft : pt;
+        const b = Number(draft.time) <= Number(pt.time) ? pt : draft;
+        if (Number(a.time) === Number(b.time)) {
+          toast.error("Alege un al doilea punct cu timp diferit.");
+          return draft;
+        }
+        const line = {
+          id: `trend-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          p1: { time: Number(a.time), price: Number(a.price) },
+          p2: { time: Number(b.time), price: Number(b.price) },
+          color: "#e0b3ff",
+          title: "Trend",
+        };
+        setTrendLines((arr) => [...arr, line]);
+        setDrawingTrend(false);
+        toast.success("Linie de trend adăugată");
+        return null;
+      });
+    },
+    []
+  );
+
+  const removeLastTrendLine = useCallback(() => {
+    setTrendLines((arr) => arr.slice(0, -1));
+  }, []);
+
+  const handleTrendLineUpdate = useCallback((updated) => {
+    if (!updated || !updated.id) return;
+    setTrendLines((arr) =>
+      arr.map((ln) =>
+        String(ln.id) === String(updated.id)
+          ? {
+              ...ln,
+              p1: {
+                time: Math.floor(Number(updated.p1.time)),
+                price: Number(updated.p1.price),
+              },
+              p2: {
+                time: Math.floor(Number(updated.p2.time)),
+                price: Number(updated.p2.price),
+              },
+            }
+          : ln
+      )
+    );
+  }, []);
+
+  const clearTrendLines = useCallback(() => {
+    setTrendLines([]);
+    setTrendDraft(null);
+    setDrawingTrend(false);
+  }, []);
 
   useEffect(() => {
     alertedRef.current = { sl: false, tp: false };
@@ -1419,7 +1541,11 @@ export function LiveTradingPanel() {
                       size="sm"
                       variant={placementMode === "sl" ? "default" : "outline"}
                       className={placementMode === "sl" ? "bg-red-600 hover:bg-red-700" : ""}
-                      onClick={() => setPlacementMode((m) => (m === "sl" ? null : "sl"))}
+                      onClick={() => {
+                        setPlacementMode((m) => (m === "sl" ? null : "sl"));
+                        setDrawingTrend(false);
+                        setTrendDraft(null);
+                      }}
                     >
                       Plasează SL pe grafic
                     </Button>
@@ -1428,7 +1554,11 @@ export function LiveTradingPanel() {
                       size="sm"
                       variant={placementMode === "tp" ? "default" : "outline"}
                       className={placementMode === "tp" ? "bg-lime-600 hover:bg-lime-700" : ""}
-                      onClick={() => setPlacementMode((m) => (m === "tp" ? null : "tp"))}
+                      onClick={() => {
+                        setPlacementMode((m) => (m === "tp" ? null : "tp"));
+                        setDrawingTrend(false);
+                        setTrendDraft(null);
+                      }}
                     >
                       Plasează TP pe grafic
                     </Button>
@@ -1448,6 +1578,67 @@ export function LiveTradingPanel() {
                     </Button>
                   </div>
                 )}
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-medium text-muted-foreground">Indicatori:</span>
+                    {USER_INDICATOR_OPTIONS.map((opt) => {
+                      const active = userIndicatorIds.includes(opt.id);
+                      return (
+                        <Button
+                          key={opt.id}
+                          type="button"
+                          size="sm"
+                          variant={active ? "default" : "outline"}
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() => toggleUserIndicator(opt.id)}
+                        >
+                          {opt.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  <span className="hidden h-6 w-px bg-border sm:inline-block" aria-hidden />
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={drawingTrend ? "default" : "outline"}
+                      className={`h-7 px-2 text-[11px] ${drawingTrend ? "bg-violet-600 hover:bg-violet-700" : ""}`}
+                      onClick={toggleDrawingTrend}
+                    >
+                      {drawingTrend
+                        ? trendDraft
+                          ? "Al 2-lea click…"
+                          : "Click primul punct…"
+                        : "Desenează linie"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-[11px]"
+                      disabled={trendLines.length === 0}
+                      onClick={removeLastTrendLine}
+                      title="Șterge ultima linie de trend"
+                    >
+                      Undo
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-[11px]"
+                      disabled={trendLines.length === 0 && !drawingTrend}
+                      onClick={clearTrendLines}
+                    >
+                      Șterge linii ({trendLines.length})
+                    </Button>
+                  </div>
+                  <span className="basis-full text-[10px] leading-snug text-muted-foreground">
+                    Indicatorii și liniile sunt doar informative — nu influențează execuția automată SL/TP sau botul.
+                    Trage de un capăt ca să lungești linia, sau de mijloc ca să o muți.
+                  </span>
+                </div>
                 <LiveBinanceChart
                   key={`${selected.pair}-${kind}-${timeframe}-${kind === "bot" ? selected.botId : ""}`}
                   symbol={selected.pair}
@@ -1472,9 +1663,14 @@ export function LiveTradingPanel() {
                       ? aiResult.chartOverlaySpecs
                       : manualPilotOverlaySpecs
                   }
+                  userIndicatorSpecs={userIndicatorSpecs}
+                  trendLines={trendLines}
                   placementMode={kind === "manual" ? placementMode : null}
+                  drawingMode={drawingTrend ? "trend" : null}
                   onPlacementConsumed={() => setPlacementMode(null)}
                   onProtectCommit={kind === "manual" ? commitProtectFromChart : undefined}
+                  onTrendPointPicked={handleTrendPointPicked}
+                  onTrendLineUpdate={handleTrendLineUpdate}
                   onTickerPrice={(p) => setWsTickerPrice(p)}
                   onWsStatus={setWsStatus}
                 />

@@ -17,6 +17,23 @@ import {
 
 const LINE_HIT_PX = 14;
 const DRAG_COMMIT_PX = 2;
+/** Toleranțe hit-test pentru liniile de trend (în pixeli). */
+const TREND_ENDPOINT_HIT_PX = 10;
+const TREND_SEGMENT_HIT_PX = 6;
+
+/** Distanță point-segment în spațiu ecran (pixeli). */
+function distToSegmentPx(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+  if (t < 0) t = 0;
+  else if (t > 1) t = 1;
+  const cx = x1 + t * dx;
+  const cy = y1 + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
 /** Interval minim între actualizări de lumânare din ticker (~20 fps). */
 const TICKER_CANDLE_MS = 48;
 
@@ -38,9 +55,18 @@ export function LiveBinanceChart({
   strategyDefinition = null,
   /** Manual + analiză AI: linii EMA/SMA/Bollinger din `chartOverlaySpecs` (server). */
   aiOverlaySpecs = null,
+  /** Manual: indicatori aleși de user pentru orientare vizuală (EMA/SMA/BB). */
+  userIndicatorSpecs = null,
+  /** Linii de trend manuale: [{ id, p1:{time,price}, p2:{time,price}, color? }]. */
+  trendLines = null,
+  /** Mod de plasare SL / TP ("sl" | "tp") sau desenare ("trend"). */
   placementMode = null,
+  drawingMode = null,
   onPlacementConsumed,
   onProtectCommit,
+  onTrendPointPicked,
+  /** Commit final după drag: { id, p1, p2 }. */
+  onTrendLineUpdate,
   onTickerPrice,
   onWsStatus,
 }) {
@@ -57,6 +83,11 @@ export function LiveBinanceChart({
   const lastTickerCandleMsRef = useRef(0);
 
   const placementModeRef = useRef(placementMode);
+  const drawingModeRef = useRef(drawingMode);
+  const onTrendPointPickedRef = useRef(onTrendPointPicked);
+  const onTrendLineUpdateRef = useRef(onTrendLineUpdate);
+  const trendLineSeriesRef = useRef(new Map());
+  const trendLinesRef = useRef(Array.isArray(trendLines) ? trendLines : []);
   const draggingRef = useRef(null);
   const dragStartYRef = useRef(0);
   const dragLastPriceRef = useRef(null);
@@ -101,6 +132,22 @@ export function LiveBinanceChart({
   useEffect(() => {
     placementModeRef.current = placementMode;
   }, [placementMode]);
+
+  useEffect(() => {
+    drawingModeRef.current = drawingMode;
+  }, [drawingMode]);
+
+  useEffect(() => {
+    onTrendPointPickedRef.current = onTrendPointPicked;
+  }, [onTrendPointPicked]);
+
+  useEffect(() => {
+    onTrendLineUpdateRef.current = onTrendLineUpdate;
+  }, [onTrendLineUpdate]);
+
+  useEffect(() => {
+    trendLinesRef.current = Array.isArray(trendLines) ? trendLines : [];
+  }, [trendLines]);
 
   useEffect(() => {
     slPriceRef.current = stopLoss;
@@ -178,6 +225,7 @@ export function LiveBinanceChart({
     return () => {
       ro.disconnect();
       strategyOverlaySeriesRef.current = [];
+      trendLineSeriesRef.current = new Map();
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -334,7 +382,8 @@ export function LiveBinanceChart({
 
     const rules = strategyDefinition ? rulesFromStrategyDefinition(strategyDefinition) : [];
     const strategySpecs = buildStrategyOverlaySpecs(rules);
-    const specs = mergeStrategyAndAiOverlaySpecs(strategySpecs, aiOverlaySpecs);
+    const withAi = mergeStrategyAndAiOverlaySpecs(strategySpecs, aiOverlaySpecs);
+    const specs = mergeStrategyAndAiOverlaySpecs(withAi, userIndicatorSpecs);
     if (!specs.length) {
       clearOverlays();
       return;
@@ -374,7 +423,79 @@ export function LiveBinanceChart({
         }
       }
     }
-  }, [strategyDefinition, aiOverlaySpecs, candleRevision, symbol, timeframe]);
+  }, [strategyDefinition, aiOverlaySpecs, userIndicatorSpecs, candleRevision, symbol, timeframe]);
+
+  /** Linii de trend desenate manual (persistate în panou). */
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const map = trendLineSeriesRef.current;
+
+    const list = Array.isArray(trendLines) ? trendLines : [];
+    const nextIds = new Set(list.map((t) => String(t.id)));
+
+    for (const [id, s] of map.entries()) {
+      if (!nextIds.has(id)) {
+        try {
+          chart.removeSeries(s);
+        } catch {
+          /* ignore */
+        }
+        map.delete(id);
+      }
+    }
+
+    for (const t of list) {
+      if (
+        !t ||
+        !t.p1 ||
+        !t.p2 ||
+        !Number.isFinite(Number(t.p1.time)) ||
+        !Number.isFinite(Number(t.p2.time)) ||
+        !Number.isFinite(Number(t.p1.price)) ||
+        !Number.isFinite(Number(t.p2.price))
+      ) {
+        continue;
+      }
+      const id = String(t.id);
+      const t1 = Math.floor(Number(t.p1.time));
+      const t2 = Math.floor(Number(t.p2.time));
+      const [a, b] =
+        t1 <= t2
+          ? [{ time: t1, value: Number(t.p1.price) }, { time: t2, value: Number(t.p2.price) }]
+          : [{ time: t2, value: Number(t.p2.price) }, { time: t1, value: Number(t.p1.price) }];
+      if (a.time === b.time) continue;
+
+      const color = t.color || "#e0b3ff";
+      let s = map.get(id);
+      if (!s) {
+        try {
+          s = chart.addSeries(LineSeries, {
+            color,
+            lineWidth: 2,
+            lineStyle: LineStyle.Solid,
+            lastValueVisible: false,
+            priceLineVisible: false,
+            title: t.title || "Trend",
+          });
+          map.set(id, s);
+        } catch {
+          continue;
+        }
+      } else {
+        try {
+          s.applyOptions({ color, title: t.title || "Trend" });
+        } catch {
+          /* ignore */
+        }
+      }
+      try {
+        s.setData([a, b]);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [trendLines]);
 
   /** WebSocket Binance: kline + ticker */
   useEffect(() => {
@@ -539,18 +660,32 @@ export function LiveBinanceChart({
     };
   }, [symbol, timeframe, loadError]);
 
-  /** Click pe grafic: plasează SL/TP când modul e activ */
+  /** Click pe grafic: plasează SL/TP când modul e activ sau alege puncte de trend */
   useEffect(() => {
     const chart = chartRef.current;
     const series = seriesRef.current;
-    if (!chart || !series || !showProtectionLines || protectionReadOnly) return;
+    if (!chart || !series) return;
 
     const handler = (param) => {
       if (Date.now() < suppressClickUntilRef.current) return;
-      const mode = placementModeRef.current;
-      if (!mode || !param.point) return;
+      if (!param.point) return;
       const price = series.coordinateToPrice(param.point.y);
       if (price == null || !Number.isFinite(Number(price))) return;
+
+      /** Desenare linie de trend (prioritar). */
+      if (drawingModeRef.current === "trend") {
+        if (param.time == null) return;
+        onTrendPointPickedRef.current?.({
+          time: Math.floor(Number(param.time)),
+          price: Number(price),
+        });
+        return;
+      }
+
+      /** Plasare SL / TP (doar manual). */
+      if (!showProtectionLines || protectionReadOnly) return;
+      const mode = placementModeRef.current;
+      if (!mode) return;
 
       const payload =
         mode === "sl" ? { stopLoss: Number(price) } : { takeProfit: Number(price) };
@@ -578,20 +713,99 @@ export function LiveBinanceChart({
     };
   }, [symbol, showProtectionLines, protectionReadOnly]);
 
-  /** Trage liniile SL / TP */
+  /** Trage liniile SL / TP și endpoints / segmentele liniilor de trend. */
   useEffect(() => {
     const el = wrapRef.current;
-    if (!el || !showProtectionLines || protectionReadOnly) return;
+    if (!el) return;
 
     const getSeries = () => seriesRef.current;
 
     const onPointerDown = (e) => {
       if (placementModeRef.current) return;
+      if (drawingModeRef.current) return;
+      const chart = chartRef.current;
       const s = getSeries();
-      if (!s) return;
+      if (!chart || !s) return;
 
       const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
+
+      /** Linii de trend: endpoint → întinde; segment → mută. */
+      const ts = chart.timeScale();
+      const lines = trendLinesRef.current || [];
+      for (const t of lines) {
+        if (
+          !t ||
+          !t.p1 ||
+          !t.p2 ||
+          !Number.isFinite(Number(t.p1.time)) ||
+          !Number.isFinite(Number(t.p2.time)) ||
+          !Number.isFinite(Number(t.p1.price)) ||
+          !Number.isFinite(Number(t.p2.price))
+        ) {
+          continue;
+        }
+        let x1, x2, y1, y2;
+        try {
+          x1 = ts.timeToCoordinate(Number(t.p1.time));
+          x2 = ts.timeToCoordinate(Number(t.p2.time));
+          y1 = s.priceToCoordinate(Number(t.p1.price));
+          y2 = s.priceToCoordinate(Number(t.p2.price));
+        } catch {
+          continue;
+        }
+        if (x1 == null || x2 == null || y1 == null || y2 == null) continue;
+
+        if (Math.hypot(x - x1, y - y1) <= TREND_ENDPOINT_HIT_PX) {
+          draggingRef.current = {
+            kind: "trend-end",
+            id: String(t.id),
+            end: "p1",
+            origP1: { time: Number(t.p1.time), price: Number(t.p1.price) },
+            origP2: { time: Number(t.p2.time), price: Number(t.p2.price) },
+          };
+          dragStartYRef.current = y;
+          el.setPointerCapture(e.pointerId);
+          e.preventDefault();
+          return;
+        }
+        if (Math.hypot(x - x2, y - y2) <= TREND_ENDPOINT_HIT_PX) {
+          draggingRef.current = {
+            kind: "trend-end",
+            id: String(t.id),
+            end: "p2",
+            origP1: { time: Number(t.p1.time), price: Number(t.p1.price) },
+            origP2: { time: Number(t.p2.time), price: Number(t.p2.price) },
+          };
+          dragStartYRef.current = y;
+          el.setPointerCapture(e.pointerId);
+          e.preventDefault();
+          return;
+        }
+        if (distToSegmentPx(x, y, x1, y1, x2, y2) <= TREND_SEGMENT_HIT_PX) {
+          const refTimeRaw = ts.coordinateToTime(x);
+          const refTime = Number(refTimeRaw);
+          const refPrice = Number(s.coordinateToPrice(y));
+          if (Number.isFinite(refTime) && Number.isFinite(refPrice)) {
+            draggingRef.current = {
+              kind: "trend-move",
+              id: String(t.id),
+              refTime,
+              refPrice,
+              origP1: { time: Number(t.p1.time), price: Number(t.p1.price) },
+              origP2: { time: Number(t.p2.time), price: Number(t.p2.price) },
+            };
+            dragStartYRef.current = y;
+            el.setPointerCapture(e.pointerId);
+            e.preventDefault();
+            return;
+          }
+        }
+      }
+
+      /** SL / TP (doar manual, read-only = bot). */
+      if (protectionReadOnly) return;
 
       const hitSl =
         slLineRef.current &&
@@ -625,50 +839,123 @@ export function LiveBinanceChart({
       }
     };
 
+    const applyTrendDrag = (d, x, y) => {
+      const chart = chartRef.current;
+      const s = getSeries();
+      if (!chart || !s) return;
+      const ts = chart.timeScale();
+      const newTimeRaw = ts.coordinateToTime(x);
+      const newTime = Number(newTimeRaw);
+      const newPrice = Number(s.coordinateToPrice(y));
+      if (!Number.isFinite(newTime) || !Number.isFinite(newPrice)) return;
+
+      let p1, p2;
+      if (d.kind === "trend-end") {
+        if (d.end === "p1") {
+          p1 = { time: newTime, price: newPrice };
+          p2 = d.origP2;
+        } else {
+          p1 = d.origP1;
+          p2 = { time: newTime, price: newPrice };
+        }
+      } else {
+        const dTime = newTime - d.refTime;
+        const dPrice = newPrice - d.refPrice;
+        p1 = { time: d.origP1.time + dTime, price: d.origP1.price + dPrice };
+        p2 = { time: d.origP2.time + dTime, price: d.origP2.price + dPrice };
+      }
+      if (!p1 || !p2) return;
+      const t1 = Math.floor(p1.time);
+      const t2 = Math.floor(p2.time);
+      if (!Number.isFinite(t1) || !Number.isFinite(t2) || t1 === t2) return;
+
+      d.currentP1 = { time: t1, price: p1.price };
+      d.currentP2 = { time: t2, price: p2.price };
+
+      const series = trendLineSeriesRef.current.get(d.id);
+      if (series) {
+        const [a, b] =
+          t1 <= t2
+            ? [{ time: t1, value: p1.price }, { time: t2, value: p2.price }]
+            : [{ time: t2, value: p2.price }, { time: t1, value: p1.price }];
+        try {
+          series.setData([a, b]);
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+
     const onPointerMove = (e) => {
-      const kind = draggingRef.current;
-      if (!kind) return;
+      const d = draggingRef.current;
+      if (!d) return;
       const s = getSeries();
       if (!s) return;
 
       const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
+
+      if (typeof d === "object" && (d.kind === "trend-end" || d.kind === "trend-move")) {
+        applyTrendDrag(d, x, y);
+        return;
+      }
+
       if (Math.abs(y - dragStartYRef.current) < DRAG_COMMIT_PX) return;
 
       const p = s.coordinateToPrice(y);
       if (p == null || !Number.isFinite(Number(p))) return;
       dragLastPriceRef.current = Number(p);
 
-      if (kind === "sl" && slLineRef.current) {
+      if (d === "sl" && slLineRef.current) {
         slLineRef.current.applyOptions({ price: Number(p) });
-      } else if (kind === "tp" && tpLineRef.current) {
+      } else if (d === "tp" && tpLineRef.current) {
         tpLineRef.current.applyOptions({ price: Number(p) });
       }
     };
 
     const onPointerUp = (e) => {
-      const kind = draggingRef.current;
+      const d = draggingRef.current;
       draggingRef.current = null;
       try {
         el.releasePointerCapture(e.pointerId);
       } catch {
         /* ignore */
       }
-      if (!kind) return;
+      if (!d) return;
+
+      if (typeof d === "object" && (d.kind === "trend-end" || d.kind === "trend-move")) {
+        suppressClickUntilRef.current = Date.now() + 350;
+        const p1 = d.currentP1 || d.origP1;
+        const p2 = d.currentP2 || d.origP2;
+        if (
+          p1 &&
+          p2 &&
+          Number.isFinite(Number(p1.time)) &&
+          Number.isFinite(Number(p2.time)) &&
+          Number(p1.time) !== Number(p2.time)
+        ) {
+          onTrendLineUpdateRef.current?.({
+            id: d.id,
+            p1: { time: Math.floor(Number(p1.time)), price: Number(p1.price) },
+            p2: { time: Math.floor(Number(p2.time)), price: Number(p2.price) },
+          });
+        }
+        return;
+      }
 
       /* Refacere linii + autoscale după drag (efectul putea să sară în timpul draggingRef). */
       setLineLayoutTick((t) => t + 1);
 
       const rect = el.getBoundingClientRect();
       const y = e.clientY - rect.top;
-      const moved =
-        Math.abs(y - dragStartYRef.current) >= DRAG_COMMIT_PX;
+      const moved = Math.abs(y - dragStartYRef.current) >= DRAG_COMMIT_PX;
       if (!moved || dragLastPriceRef.current == null) return;
 
       suppressClickUntilRef.current = Date.now() + 450;
-      if (kind === "sl") {
+      if (d === "sl") {
         onProtectCommitRef.current?.({ stopLoss: dragLastPriceRef.current });
-      } else if (kind === "tp") {
+      } else if (d === "tp") {
         onProtectCommitRef.current?.({ takeProfit: dragLastPriceRef.current });
       }
     };
@@ -697,11 +984,13 @@ export function LiveBinanceChart({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
         {wsBadge}
-        {placementMode && (
+        {drawingMode === "trend" ? (
+          <span className="text-violet-200">Click pe două puncte pentru linia de trend</span>
+        ) : placementMode ? (
           <span className="text-amber-200">
             Click pe grafic pentru {placementMode === "sl" ? "Stop loss" : "Take profit"}
           </span>
-        )}
+        ) : null}
       </div>
       <div ref={wrapRef} className="relative h-[380px] w-full min-h-[280px] cursor-crosshair rounded-lg border border-border bg-[#0c111d]">
         {loadError && (
