@@ -2279,7 +2279,7 @@ export function LiveTradingPanel() {
                         <span className="font-mono">#{selected.oco.orderListId}</span>
                       </div>
                       <div className="mt-1 opacity-70">
-                        Binance execută SL/TP sub-secundă. La un „Închide poziția" sau închidere AI, OCO e anulat automat înainte de market sell.
+                        Binance execută SL/TP sub-secundă. La un „Închide poziția” sau închidere AI, OCO e anulat automat înainte de market sell.
                       </div>
                     </div>
                   ) : selected?.ocoLastError?.message ? (
