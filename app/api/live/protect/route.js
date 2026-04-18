@@ -4,6 +4,7 @@ import User from "@/models/User";
 import { requireAuth } from "@/lib/api-helpers";
 import { respondIfMongoMissing } from "@/lib/mongo-env";
 import { liveProtectSchema } from "@/lib/validations/schemas";
+import { syncLiveProtectionOco } from "@/server/trading/live-protection-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -43,10 +44,26 @@ export async function POST(request) {
       : {};
 
   if (clear) {
-    delete live[pair];
+    /** Păstrează tranzient `oco` ca syncLiveProtectionOco să știe ce să anuleze. */
+    const had = live[pair] && typeof live[pair] === "object" ? live[pair] : null;
+    if (had?.oco) {
+      live[pair] = { oco: had.oco };
+    } else {
+      delete live[pair];
+    }
     user.liveProtections = live;
     await user.save();
-    return NextResponse.json({ ok: true, liveProtections: live });
+    const ocoRes = await syncLiveProtectionOco({
+      userId: String(session.userId),
+      pair,
+      reason: "protection_cleared",
+    });
+    const fresh = await User.findById(session.userId).lean();
+    return NextResponse.json({
+      ok: true,
+      liveProtections: fresh?.liveProtections || {},
+      oco: ocoRes,
+    });
   }
 
   const cur = { ...(live[pair] && typeof live[pair] === "object" ? live[pair] : {}) };
@@ -59,11 +76,35 @@ export async function POST(request) {
     else cur.takeProfit = takeProfit;
   }
 
-  if (Object.keys(cur).length === 0) delete live[pair];
-  else live[pair] = cur;
+  const onlyHasOco =
+    Object.keys(cur).length === 1 && cur.oco != null && cur.stopLoss == null && cur.takeProfit == null;
+  if (Object.keys(cur).length === 0 || onlyHasOco) {
+    /** Nu mai există SL/TP logic — păstrăm `oco` pentru ca sync-ul să-l anuleze. */
+    if (cur.oco) {
+      live[pair] = { oco: cur.oco };
+    } else {
+      delete live[pair];
+    }
+  } else {
+    live[pair] = cur;
+  }
 
   user.liveProtections = live;
   await user.save();
 
-  return NextResponse.json({ ok: true, pair, protection: live[pair] || null, liveProtections: live });
+  const ocoRes = await syncLiveProtectionOco({
+    userId: String(session.userId),
+    pair,
+    reason: "protection_saved",
+  });
+  const fresh = await User.findById(session.userId).lean();
+  const freshProt = fresh?.liveProtections || {};
+
+  return NextResponse.json({
+    ok: true,
+    pair,
+    protection: freshProt[pair] || null,
+    liveProtections: freshProt,
+    oco: ocoRes,
+  });
 }

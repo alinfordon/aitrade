@@ -178,5 +178,35 @@ function buildSummaryForStorage(job, body) {
     };
   }
 
+  if (job === "reconcile-oco") {
+    const r = Array.isArray(body.results) ? body.results : [];
+    const summary = body.summary && typeof body.summary === "object" ? body.summary : undefined;
+    return {
+      ...(summary ? { summary } : {}),
+      users: r.length,
+      items: r.slice(0, 24).map((item) => {
+        const events = Array.isArray(item?.events) ? item.events : [];
+        return {
+          userId: item.userId,
+          ok: item.ok,
+          skipped: item.skipped,
+          reason: item.reason,
+          error: item.error ? String(item.error).slice(0, 240) : undefined,
+          pairsChecked: item.pairsChecked,
+          events: events.slice(0, 10).map((e) => ({
+            pair: e.pair,
+            action: e.action,
+            trigger: e.trigger,
+            filledQty: e.filledQty,
+            avgPrice: e.avgPrice,
+            pnl: e.pnl,
+            status: e.status,
+            error: e.error ? String(e.error).slice(0, 200) : undefined,
+          })),
+        };
+      }),
+    };
+  }
+
   return { note: "unknown-job-shape" };
 }

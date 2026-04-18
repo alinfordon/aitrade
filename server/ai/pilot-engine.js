@@ -9,6 +9,7 @@ import { runAutopilotDecide } from "@/lib/ai/autopilot-decide";
 import { tryActivateBot } from "@/server/bots/try-activate-bot";
 import { closeBotOpenPositionMarketOnly } from "@/server/trading/stop-bot";
 import { executeManualTrade } from "@/server/trading/execute-manual";
+import { discardManualPosition, verifyRealDust } from "@/server/trading/discard-position";
 import { createPilotStrategyAndBot } from "@/server/ai/pilot-create-bot";
 import { readPilotOpen } from "@/server/ai/pilot-read-open";
 import { runAutopilotManualLiveSellsDecide } from "@/lib/ai/autopilot-manual-live-decide";
@@ -85,6 +86,50 @@ function findPilotBotIdOnPair(pilotBots, pairKey) {
     if (normPair(b.pair) === p) return String(b._id);
   }
   return null;
+}
+
+/**
+ * Preflight pentru vânzări reale: verifică pe Binance dacă poziția din carte
+ * este „praf” (sub LOT_SIZE / minQty / MIN_NOTIONAL). Dacă da, o elimină
+ * automat din `manualSpotBook` + `liveProtections`, salvează un Trade
+ * `status: cancelled` și spune apelantului să sară peste `executeManualTrade`
+ * (evită tranzacții `failed` repetate în DB).
+ *
+ * Paper / lipsă chei API / piață indisponibilă → `discarded: false` (nu
+ * blocăm fluxul, ordinul se va încerca normal).
+ *
+ * @param {{
+ *   user: any,
+ *   pair: string,
+ *   qty: number,
+ *   isPaper: boolean,
+ *   source: string, // "pilot_manual_sell" | "pilot_live_tpsl" | "pilot_live_ai_sell"
+ * }} args
+ */
+async function maybeAutoDiscardDust({ user, pair, qty, isPaper, source }) {
+  if (isPaper) return { discarded: false };
+  if (!(Number.isFinite(qty) && qty > 0)) return { discarded: false };
+  const apiKey = decryptSecret(user?.apiKeyEncrypted || "");
+  const secret = decryptSecret(user?.apiSecretEncrypted || "");
+  if (!apiKey || !secret) return { discarded: false };
+
+  const info = await verifyRealDust({ apiKey, secret, pair, qty });
+  if (!info.checked || !info.dust) return { discarded: false };
+
+  const res = await discardManualPosition({
+    userId: user._id,
+    pair,
+    force: true,
+    verifyDust: false,
+    source,
+    reason: "dust_auto_cleanup",
+  });
+  return {
+    discarded: Boolean(res.ok),
+    trade: res.trade || null,
+    error: res.error,
+    sellable: info.sellable,
+  };
 }
 
 async function enrichAiPilotBuyWithStrategy({
@@ -210,6 +255,25 @@ async function runManualLiveProtectionsTick({ userId, liveRows, bots }) {
     const isPaper = Boolean(b?.paper);
     if (isPaper || !Number.isFinite(qty) || qty <= 1e-12) {
       applied.push({ tip: "manual_protect", pair, ok: false, detail: "fara_pozitie_live" });
+      continue;
+    }
+
+    const dust = await maybeAutoDiscardDust({
+      user,
+      pair,
+      qty,
+      isPaper: false,
+      source: "pilot_live_tpsl",
+    });
+    if (dust.discarded) {
+      applied.push({
+        tip: "manual_protect",
+        pair,
+        ok: true,
+        detail: "dust_auto_discarded",
+        trigger: hitSl ? "sl" : "tp",
+        price,
+      });
       continue;
     }
 
@@ -472,6 +536,28 @@ export async function runAiPilotForUser(userId, opts = {}) {
       applied.push({ tip: "manual_vinde", pair, ok: false, detail: "fara_pozitie" });
       continue;
     }
+    const isPaperPos = Boolean(b?.paper);
+
+    if (orderMode === "real" && !isPaperPos) {
+      const dust = await maybeAutoDiscardDust({
+        user,
+        pair,
+        qty,
+        isPaper: false,
+        source: "pilot_manual_sell",
+      });
+      if (dust.discarded) {
+        applied.push({
+          tip: "manual_vinde",
+          pair,
+          ok: true,
+          detail: "dust_auto_discarded",
+          motiv: String(m.motiv || ""),
+        });
+        continue;
+      }
+    }
+
     const pilotBotIdForSell = findPilotBotIdOnPair(bots, pair);
 
     const r = await executeManualTrade({
@@ -952,6 +1038,24 @@ export async function runAiPilotManualLiveAiForUser(userId) {
     const isPaper = Boolean(b?.paper);
     if (isPaper || !Number.isFinite(qty) || qty <= 1e-12) {
       applied.push({ tip: "manual_vinde_live_ai", pair, ok: false, detail: "fara_pozitie_live" });
+      continue;
+    }
+
+    const dust = await maybeAutoDiscardDust({
+      user,
+      pair,
+      qty,
+      isPaper: false,
+      source: "pilot_live_ai_sell",
+    });
+    if (dust.discarded) {
+      applied.push({
+        tip: "manual_vinde_live_ai",
+        pair,
+        ok: true,
+        detail: "dust_auto_discarded",
+        motiv: String(item?.motiv || ""),
+      });
       continue;
     }
 

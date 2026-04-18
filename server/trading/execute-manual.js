@@ -8,6 +8,10 @@ import { getPrice, placeMarketSellSpotClamped, placeOrder } from "@/lib/binance/
 import { createExchange, withRetries, syncServerTime } from "@/lib/binance/client";
 import { DEFAULT_QUOTE_ASSET, getManualPaperQuoteBalance, normSpotPair } from "@/lib/market-defaults";
 import { mapBinanceUserMessageAsync, isBinanceMarketClosedError } from "@/lib/binance/map-exchange-error";
+import {
+  cancelLiveProtectionOco,
+  syncLiveProtectionOco,
+} from "@/server/trading/live-protection-sync";
 
 function parsePair(pair) {
   const [base, quote] = String(pair).split("/");
@@ -221,6 +225,20 @@ export async function executeManualTrade({
     return { ok: false, error: "Add Binance API keys in Settings for live trading" };
   }
 
+  /**
+   * Preflight pentru sell real: dacă pe pereche avem un OCO plasat (SL/TP pe
+   * Binance), cantitatea e blocată în ordin și market sell-ul va eșua cu
+   * `insufficient balance`. Anulăm întâi OCO-ul → qty se deblochează → market
+   * sell merge. `syncLiveProtectionOco` curăță și câmpul `oco` din DB.
+   */
+  if (s === "sell") {
+    try {
+      await cancelLiveProtectionOco({ userId, pair });
+    } catch {
+      /* fail-open: dacă nu reușim să anulăm, lăsăm market sell să ridice eroarea clară din Binance */
+    }
+  }
+
   try {
     let order;
     const ex = createExchange({ apiKey, secret });
@@ -391,6 +409,17 @@ export async function executeManualTrade({
         tradeSource: "manual",
         meta: { orderId: order.id, ...(associateBotForControl ? { aiPilotControl: true } : {}) },
       });
+
+      /**
+       * Post-buy: dacă userul are deja SL+TP salvate pe perechea asta,
+       * re-sincronizăm OCO-ul pe noua cantitate totală. Eșecul nu blochează
+       * trade-ul (protecția pe vechea qty oricum nu era suficientă).
+       */
+      try {
+        await syncLiveProtectionOco({ userId, pair, reason: "post_buy" });
+      } catch {
+        /* fail-open: protecția se re-poate salva manual sau la următorul tick */
+      }
       return { ok: true, trade: tr };
     }
 

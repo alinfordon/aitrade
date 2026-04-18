@@ -179,6 +179,7 @@ export function LiveTradingPanel() {
   const [tpInput, setTpInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   /** Implicit activ: la SL/TP se execută market sell (manual sau închidere bot), nu doar afișare. Dezactivare opțională. */
   const [autoProtectExec, setAutoProtectExec] = useState(true);
   const [polledPrice, setPolledPrice] = useState(null);
@@ -1068,6 +1069,61 @@ export function LiveTradingPanel() {
     }
   }
 
+  async function discardDustPosition() {
+    if (!selected || kind !== "manual") return;
+    const pair = selected.pair;
+    const baseAsset = String(pair).split("/")[0] || "BASE";
+    const qtyStr = Number(selected.qty).toLocaleString(undefined, { maximumFractionDigits: 8 });
+    if (typeof window !== "undefined") {
+      const ok = window.confirm(
+        `Elimin din cartea aplicației poziția ${pair} (${qtyStr} ${baseAsset})?\n\n` +
+          "Folosește DOAR pentru „praf” care nu respectă LOT_SIZE / MIN_NOTIONAL pe Binance. " +
+          "Acțiunea nu plasează niciun ordin: poziția dispare doar din app, iar orice sold rămas " +
+          "pe Binance trebuie vândut / convertit manual acolo."
+      );
+      if (!ok) return;
+    }
+    setDiscarding(true);
+    try {
+      let r = await fetch("/api/live/discard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pair }),
+      });
+      let j = await r.json();
+      if (!r.ok) {
+        const canForce =
+          typeof window !== "undefined" &&
+          /NU e praf|nu am putut verifica|F[aă]r[aă] chei API/i.test(String(j.error || "")) &&
+          window.confirm(
+            (typeof j.error === "string" ? j.error + "\n\n" : "") +
+              "Vrei să forțezi eliminarea din carte oricum? Binance nu va fi contactat."
+          );
+        if (!canForce) {
+          toast.error(typeof j.error === "string" ? j.error : "Eroare eliminare poziție");
+          return;
+        }
+        r = await fetch("/api/live/discard", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pair, force: true }),
+        });
+        j = await r.json();
+        if (!r.ok) {
+          toast.error(typeof j.error === "string" ? j.error : "Eroare eliminare poziție");
+          return;
+        }
+      }
+      toast.success(`Poziție eliminată din carte (${pair}).`);
+      setSelected(null);
+      setKind(null);
+      await refresh();
+      void loadWallet({ silent: true });
+    } finally {
+      setDiscarding(false);
+    }
+  }
+
   const markForPnl =
     selected &&
     (wsTickerPrice != null && Number.isFinite(wsTickerPrice)
@@ -1575,6 +1631,20 @@ export function LiveTradingPanel() {
                       {closing
                         ? "Se închide…"
                         : `Închide poziția · ${fmtQty(selected.qty)} ${selected.pair.split("/")[0]}`}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={discarding}
+                      onClick={() => void discardDustPosition()}
+                      title={
+                        "Elimină poziția din cartea aplicației (pentru „praf” sub LOT_SIZE / " +
+                        "MIN_NOTIONAL pe Binance). Nu plasează niciun ordin."
+                      }
+                      className="border-rose-500/40 text-rose-300 hover:bg-rose-500/10 hover:text-rose-200"
+                    >
+                      {discarding ? "Se elimină…" : "Elimină praf"}
                     </Button>
                   </div>
                 )}
@@ -2196,6 +2266,31 @@ export function LiveTradingPanel() {
                       Șterge ținte
                     </Button>
                   </div>
+                  {selected?.oco?.orderListId ? (
+                    <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                      <div className="flex items-center gap-2 font-medium">
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                        OCO activ pe Binance
+                      </div>
+                      <div className="mt-1 opacity-80">
+                        SL {Number(selected.oco.stopPrice).toFixed(6)} · TP{" "}
+                        {Number(selected.oco.limitPrice).toFixed(6)} · qty{" "}
+                        {Number(selected.oco.placedQty).toFixed(6)} ·{" "}
+                        <span className="font-mono">#{selected.oco.orderListId}</span>
+                      </div>
+                      <div className="mt-1 opacity-70">
+                        Binance execută SL/TP sub-secundă. La un „Închide poziția" sau închidere AI, OCO e anulat automat înainte de market sell.
+                      </div>
+                    </div>
+                  ) : selected?.ocoLastError?.message ? (
+                    <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                      <div className="font-medium">OCO pe Binance: eșec la plasare</div>
+                      <div className="mt-1 break-words opacity-80">{selected.ocoLastError.message}</div>
+                      <div className="mt-1 opacity-70">
+                        Protecția rămâne doar pe partea app-ului (cron la 1 min). Verifică dacă perechea are MIN_NOTIONAL satisfăcut sau dacă soldul e blocat într-un alt ordin.
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="rounded-md border border-border/80 px-3 py-2">
                     <Label className="flex cursor-pointer items-start gap-2 text-xs leading-snug">
                       <input

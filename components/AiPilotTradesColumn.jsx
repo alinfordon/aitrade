@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Bot, ExternalLink } from "lucide-react";
+import { Bot, ExternalLink, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -49,6 +49,64 @@ export function AiPilotTradesColumn({ className, variant = "default" } = {}) {
   const [loading, setLoading] = useState(true);
   /** real = doar tranzacții live; paper = simulate / paper */
   const [modeTab, setModeTab] = useState("real");
+  const [discarding, setDiscarding] = useState(null);
+
+  const discardDust = useCallback(
+    async (row) => {
+      if (!row?.pair) return;
+      const baseAsset = String(row.pair).split("/")[0] || "BASE";
+      const qtyStr = Number(row.qty).toLocaleString(undefined, { maximumFractionDigits: 8 });
+      if (typeof window !== "undefined") {
+        const ok = window.confirm(
+          `Elimin din cartea aplicației poziția ${row.pair} (${qtyStr} ${baseAsset})?\n\n` +
+            "Dacă e praf (sub LOT_SIZE / MIN_NOTIONAL pe Binance), va dispărea doar din app " +
+            "— AI Pilot nu o va mai încerca. Dacă există sold real pe Binance, îl vinzi / " +
+            "convertești manual acolo. Acțiunea nu plasează niciun ordin."
+        );
+        if (!ok) return;
+      }
+      setDiscarding(row.pair);
+      try {
+        let r = await fetch("/api/live/discard", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pair: row.pair }),
+        });
+        let j = await r.json();
+        if (!r.ok) {
+          const forceOk =
+            typeof window !== "undefined" &&
+            /NU e praf|nu am putut verifica|F[aă]r[aă] chei API/i.test(String(j.error || "")) &&
+            window.confirm(
+              (typeof j.error === "string" ? j.error + "\n\n" : "") +
+                "Vrei să forțezi eliminarea din carte oricum? " +
+                "Binance nu va fi contactat — poziția rămâne ACOLO dacă există, doar dispare din app."
+            );
+          if (!forceOk) {
+            toast.error(typeof j.error === "string" ? j.error : "Eroare eliminare poziție");
+            return;
+          }
+          r = await fetch("/api/live/discard", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pair: row.pair, force: true }),
+          });
+          j = await r.json();
+          if (!r.ok) {
+            toast.error(typeof j.error === "string" ? j.error : "Eroare eliminare poziție");
+            return;
+          }
+        }
+        toast.success(`Poziția ${row.pair} a fost eliminată din carte.`);
+        void refreshLivePositionsFromServer();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Eroare eliminare poziție");
+      } finally {
+        setDiscarding(null);
+      }
+    },
+    []
+  );
 
   const load = useCallback(async () => {
     if (isDashboard) return;
@@ -277,6 +335,7 @@ export function AiPilotTradesColumn({ className, variant = "default" } = {}) {
                         <th className="px-2 py-2 text-right">Intrare</th>
                         <th className="px-2 py-2 text-right">Mark</th>
                         <th className="px-3 py-2">Live</th>
+                        {!isDashboard ? <th className="px-2 py-2 text-right">Acțiuni</th> : null}
                       </tr>
                     </thead>
                     <tbody className="fleet-tbody-live">
@@ -305,6 +364,25 @@ export function AiPilotTradesColumn({ className, variant = "default" } = {}) {
                               <ExternalLink className="h-3 w-3 opacity-80" aria-hidden />
                             </Link>
                           </td>
+                          {!isDashboard ? (
+                            <td className="px-2 py-2 text-right">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 gap-1 px-2 text-[10px] text-muted-foreground hover:text-rose-400"
+                                disabled={discarding === m.pair}
+                                onClick={() => void discardDust(m)}
+                                title={
+                                  "Elimină poziția din cartea aplicației (pentru „praf” sub LOT_SIZE / " +
+                                  "MIN_NOTIONAL). Nu plasează niciun ordin pe Binance."
+                                }
+                              >
+                                <Trash2 className="h-3 w-3" aria-hidden />
+                                {discarding === m.pair ? "Se elimină…" : "Elimină praf"}
+                              </Button>
+                            </td>
+                          ) : null}
                         </tr>
                       ))}
                     </tbody>

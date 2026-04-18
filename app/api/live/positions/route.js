@@ -94,6 +94,18 @@ export async function GET(request) {
     if (!Number.isFinite(qty) || qty <= 1e-12) continue;
     const avgEntry = Number(raw?.avg ?? raw?.avgEntry ?? 0);
     const p = prot[pair] || {};
+    const ocoInfo =
+      p && typeof p.oco === "object" && p.oco?.orderListId
+        ? {
+            orderListId: String(p.oco.orderListId),
+            placedQty: p.oco.placedQty != null ? Number(p.oco.placedQty) : null,
+            stopPrice: p.oco.stopPrice != null ? Number(p.oco.stopPrice) : null,
+            stopLimitPrice:
+              p.oco.stopLimitPrice != null ? Number(p.oco.stopLimitPrice) : null,
+            limitPrice: p.oco.limitPrice != null ? Number(p.oco.limitPrice) : null,
+            placedAt: p.oco.placedAt || null,
+          }
+        : null;
     manual.push({
       pair,
       qty,
@@ -104,6 +116,17 @@ export async function GET(request) {
       source: "manual",
       paper: raw?.paper === true,
       origin: "user",
+      oco: ocoInfo,
+      ocoLastError:
+        p && typeof p.ocoLastError === "object"
+          ? {
+              code: p.ocoLastError.code || null,
+              message: p.ocoLastError.message
+                ? String(p.ocoLastError.message).slice(0, 300)
+                : null,
+              at: p.ocoLastError.at || null,
+            }
+          : null,
     });
   }
 

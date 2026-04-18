@@ -18,6 +18,7 @@ AI Pilot este alcătuit din 3 fluxuri independente, rulate pe cron:
 | **Pilot principal** (analiză & acțiuni) | `runAiPilotForUser` (`server/ai/pilot-engine.js`) | la fiecare 15 min (configurabil per user) | Analizează piața și boții, poate activa/pauza/închide boți, poate vinde/cumpăra manual, poate crea un bot nou |
 | **TP/SL Live manual** (fără AI) | `runAiPilotManualLiveForUser` | la 1 min | Execută automat Stop Loss / Take Profit pe pozițiile manuale live care au protecții salvate |
 | **Vânzări AI pe Live manual** | `runAiPilotManualLiveAiForUser` | la 5 min | AI analizează pozițiile live deschise prin pilot și poate propune vânzări suplimentare (doar în mod `real`) |
+| **Reconciliere OCO** | `runOcoReconcileBatch` (`/api/cron/reconcile-oco`) | la 15 min | Sincronizează ordinele OCO de pe Binance cu DB-ul aplicației: detectează SL/TP fillate pe exchange, scade qty, creează `Trade`, curăță referințe moarte (detalii §5.1.2) |
 
 Pe lângă acestea, **motorul de bot** (`runSingleBot`, `server/engine/bot-runner.js`)
 evaluează strategia botului (entry/exit) și aplică risk management pentru fiecare
@@ -180,6 +181,161 @@ Ordinea operațiilor e strict respectată în engine:
   `executeManualTrade` side=`sell`, `fullExit: true`, `mode: "real"`.
 - La vânzare reușită, șterge protecțiile pentru acea pereche.
 - Este securitatea de bază pe pozițiile live deschise de AI Pilot (sau manual).
+
+### 5.1.1 Eliminare „praf” din carte (`POST /api/live/discard`)
+
+Binance respinge vânzările sub `LOT_SIZE` (pasul minim al cantității) sau sub
+`MIN_NOTIONAL` (valoare minimă în cotă). După mai multe vânzări parțiale sau
+după conversii pe Binance, în cartea aplicației poate rămâne o cantitate
+reziduală care nu mai poate fi vândută — „praf”. Atâta timp cât poziția există
+în `manualSpotBook`, AI Pilot și cron-ul TP/SL vor continua să încerce să o
+vândă și vor salva tranzacții `failed` degeaba.
+
+Helperul comun este `server/trading/discard-position.js`:
+
+- `verifyRealDust({ apiKey, secret, pair, qty, price? })` încarcă piața spot
+  Binance și folosește `spotMaxSellableBaseFromFree` → `dust: true` când
+  vânzarea e imposibilă.
+- `discardManualPosition({ userId, pair, force?, verifyDust?, source, reason })`
+  șterge poziția din `manualSpotBook` și `liveProtections[pair]` și creează un
+  `Trade { status: "cancelled", meta.discard: true, meta.source, meta.reason }`.
+
+Endpoint `POST /api/live/discard` (schema `liveDiscardSchema`, `source = user_manual`):
+
+- Payload: `{ pair, force? }`.
+- `paper`: se șterge necondiționat.
+- `real` fără `force`: dacă Binance acceptă încă o vânzare (`sellable > 0`)
+  cererea e respinsă cu `Poziția NU e praf — folosește „Închide poziția”`.
+- `real` cu `force: true`: elimină necondiționat (poziția rămâne pe Binance
+  dacă există acolo — userul o vinde / convertește manual).
+
+Butoanele „Elimină praf” apar în `AiPilotTradesColumn` (pagina AI Pilot) și în
+`LiveTradingPanel` (pagina Live) lângă „Închide poziția”, cu confirmare din
+browser înainte de apel.
+
+#### Auto-cleanup în AI Pilot (`maybeAutoDiscardDust`)
+
+Pentru a evita tranzacții `failed` repetate pe aceeași poziție praf, toate
+cele trei puncte unde pilotul emite market sells reale fac preflight:
+
+| Flux | `meta.source` |
+|---|---|
+| Faza 1 „vânzări manuale” din `runAiPilotForUser` | `pilot_manual_sell` |
+| TP/SL la minut din `runManualLiveProtectionsTick` | `pilot_live_tpsl` |
+| AI peste poziții live din `runAiPilotManualLiveAiForUser` | `pilot_live_ai_sell` |
+
+Preflight-ul:
+
+1. Sare peste perechi paper / fără chei API (lăsăm fluxul normal să decidă).
+2. Rulează `verifyRealDust`. Dacă `dust: true`, apelează `discardManualPosition`
+   cu `force: true, verifyDust: false, reason: "dust_auto_cleanup"`.
+3. Raportează în `applied[]` cu `detail: "dust_auto_discarded"` și NU mai
+   execută `executeManualTrade` (nu se mai salvează `failed` în DB).
+
+Efectul: prima rulare pe care detectăm praful îl elimină silențios din carte;
+rulările următoare nu mai au ce să încerce pe acea pereche.
+
+### 5.1.2 Protecție SL/TP realtime prin OCO pe Binance
+
+Cron-ul `runManualLiveProtectionsTick` rulează la 1 min și poate rata spike-uri
+scurte (sub 60s) care ating SL/TP. Pentru a elimina această fereastră de risc,
+aplicația plasează **ordine OCO** (One-Cancels-the-Other) direct pe Binance ori
+de câte ori există SL **și** TP pe o poziție spot reală. OCO-ul declanșează
+execuția pe exchange sub-secundă, independent de uptime-ul serverului.
+
+#### Helper `server/trading/binance-oco.js`
+
+- `placeSpotOcoSell({ apiKey, secret, pair, qty, stopLoss, takeProfit })` plasează
+  un OCO SELL pe cantitatea curentă. Prețurile sunt aliniate la `PRICE_FILTER.tickSize`
+  și `LOT_SIZE.stepSize`; `stopLimitPrice = stopPrice × 0.998` (buffer 0.2% ca SL-ul
+  să fill-uiască și în spike-uri rapide). Validează `MIN_NOTIONAL` pentru ambele leg-uri.
+- `cancelSpotOco({ apiKey, secret, pair, orderListId })` anulează OCO-ul după
+  `orderListId`. Tolerant la „deja cancel/filled” (tratat ca `alreadyGone: true`).
+- `fetchOcoStatus({ apiKey, secret, pair, orderListId })` verifică pe Binance
+  dacă OCO-ul mai e activ (`EXECUTING`) sau s-a finalizat.
+- `fetchOcoFillDetails({ apiKey, secret, pair, stopOrderId, limitOrderId })`
+  citește ambele leg-uri și returnează `{ filledQty, avgPrice, trigger: "sl" | "tp" }`.
+
+#### Orchestrare prin `server/trading/live-protection-sync.js`
+
+Un singur entry point centralizează logica de place/cancel:
+
+- `syncLiveProtectionOco({ userId, pair, reason, forceReplace? })` compară starea
+  din DB cu ce trebuie să existe:
+  - *Paper / fără chei API / fără SL sau TP / qty ≈ 0* → cancel OCO dacă există,
+    fără replacement.
+  - *SL + TP prezente* → dacă OCO-ul curent coincide pe qty + prețuri și e încă
+    activ, îl păstrăm; altfel cancel + place nou.
+  - Scrie rezultatul în `user.liveProtections[pair].oco`.
+- `cancelLiveProtectionOco({ userId, pair })` anulează doar OCO-ul și curăță
+  referința; păstrează `stopLoss` / `takeProfit` pentru a putea fi re-plasate.
+
+#### Schema `user.liveProtections[pair]`
+
+```json
+{
+  "stopLoss": 0.42,
+  "takeProfit": 0.60,
+  "oco": {
+    "orderListId": "123456789",
+    "stopOrderId": "111",
+    "limitOrderId": "112",
+    "placedQty": 120.5,
+    "stopPrice": 0.42,
+    "stopLimitPrice": 0.41916,
+    "limitPrice": 0.60,
+    "placedAt": "2026-04-18T12:34:56.789Z",
+    "lastError": null
+  },
+  "ocoLastError": { "code": "BELOW_MIN_NOTIONAL", "message": "…", "at": "…" }
+}
+```
+
+Când OCO nu poate fi plasat (MIN_NOTIONAL, fonduri blocate, rețea), motivul se
+salvează în `ocoLastError` și UI-ul (LiveTradingPanel) afișează un banner galben.
+Cron-ul la 1 min rămâne operațional — OCO e un strat suplimentar, nu un înlocuitor.
+
+#### Hook-uri în fluxul trade-urilor
+
+| Eveniment | Acțiune OCO |
+|---|---|
+| `POST /api/live/protect` (save SL / TP) | `syncLiveProtectionOco(reason: "protection_saved")` → place / replace |
+| `POST /api/live/protect` (clear) | `syncLiveProtectionOco(reason: "protection_cleared")` → cancel |
+| `executeManualTrade` înainte de sell real | `cancelLiveProtectionOco` → deblochează qty pe Binance |
+| `executeManualTrade` după buy real | `syncLiveProtectionOco(reason: "post_buy")` → recreează pe qty totală |
+| `discardManualPosition` (real) | `cancelLiveProtectionOco` → eliberează ordinul de pe exchange |
+
+Efectul net: în orice moment în care există SL + TP și o poziție validă, Binance
+deține ordinul de protecție și îl execută realtime. La orice sell (manual, AI,
+close, discard), OCO-ul e anulat automat ca market sell-ul să găsească qty
+liberă.
+
+#### Reconciliere (`GET /api/cron/reconcile-oco`, */15 min)
+
+Rulată de `server/trading/oco-reconcile.js` → `runOcoReconcileBatch`:
+
+1. Pentru fiecare user cu `liveProtections[*].oco.orderListId`:
+2. `fetchOcoStatus`. Dacă `gone: true`:
+   - Citește `fetchOcoFillDetails`. Dacă există fill (`filledQty > 0`):
+     - Scade `manualSpotBook[pair].qty` cu cantitatea fillată.
+     - Calculează `pnl = filledQty × (avgPrice − avg cost)` și bump
+       `user.stats.{totalProfit, totalTrades, winTrades}`.
+     - Creează `Trade { side: "sell", status: "filled", meta.source: "oco_binance",
+       meta.trigger: "sl" | "tp", meta.orderListId }`.
+     - Curăță `liveProtections[pair].oco`.
+   - Dacă nu există fill (anulat manual pe Binance): curăță doar `.oco`.
+3. Dacă `gone: false` (încă `EXECUTING`): nothing.
+
+Summary-ul rulării (`reconcile-oco` în `CronRunLog`) expune:
+`ocoFilled`, `ocoCancelledExternally`, `ocoStillActive`, `ocoErrors`.
+
+#### Ce NU face stratul OCO (by design)
+
+- Nu se plasează OCO pe paper trades (nu există ordin real).
+- Nu se plasează OCO dacă lipsește SL sau TP — lăsăm doar cron-ul la 1 min.
+- Nu se plasează OCO sub `MIN_NOTIONAL` (Binance ar respinge oricum).
+- Nu se înlocuiește cron-ul la 1 min — acesta rămâne fallback pentru cazurile în
+  care OCO nu a putut fi plasat (sold, notional, rețea).
 
 ### 5.2 AI peste pozițiile live Pilot (`runAiPilotManualLiveAiForUser`)
 
