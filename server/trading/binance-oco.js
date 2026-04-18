@@ -167,14 +167,26 @@ export async function placeSpotOcoSell({ apiKey, secret, pair, qty, stopLoss, ta
   const stopLimitNum = Number(stopLimitStr);
   const limitNum = Number(limitStr);
 
+  /**
+   * ccxt 4.x nu acceptă `createOrder(…, 'OCO', …)` ca tip unificat (respinge
+   * cu „OCO is not a valid order type”). Folosim direct endpoint-ul privat
+   * `POST /api/v3/order/oco` (legacy, încă suportat de Binance) — la fel de
+   * valid ca `orderList/oco` noul, dar fără schimbări de breaking signature.
+   */
+  const binanceSymbol = sym.replace("/", "");
   let result;
   try {
     result = await withRetries(
       () =>
-        ex.createOrder(sym, "OCO", "sell", qtyNum, limitNum, {
-          stopPrice: stopNum,
-          stopLimitPrice: stopLimitNum,
+        ex.privatePostOrderOco({
+          symbol: binanceSymbol,
+          side: "SELL",
+          quantity: qtyStr,
+          price: limitStr,
+          stopPrice: stopStr,
+          stopLimitPrice: stopLimitStr,
           stopLimitTimeInForce: "GTC",
+          newOrderRespType: "FULL",
         }),
       { exchange: ex }
     );
@@ -186,13 +198,9 @@ export async function placeSpotOcoSell({ apiKey, secret, pair, qty, stopLoss, ta
     throw err;
   }
 
-  const info = result?.info || {};
+  const info = result || {};
   const orderListId =
-    info.orderListId != null
-      ? String(info.orderListId)
-      : result?.id != null
-        ? String(result.id)
-        : null;
+    info.orderListId != null ? String(info.orderListId) : null;
   const orderReports = Array.isArray(info.orderReports) ? info.orderReports : [];
   let stopOrderId = null;
   let limitOrderId = null;
