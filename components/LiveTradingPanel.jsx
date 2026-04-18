@@ -1208,6 +1208,22 @@ export function LiveTradingPanel() {
                                 fără TP/SL
                               </Badge>
                             )}
+                            {row.oco?.orderListId ? (
+                              <Badge
+                                className="border-emerald-500/60 bg-emerald-500/20 text-[9px] font-semibold text-emerald-200"
+                                title={`OCO activ pe Binance · #${row.oco.orderListId}`}
+                              >
+                                OCO Binance
+                              </Badge>
+                            ) : row.ocoLastError?.message ? (
+                              <Badge
+                                variant="outline"
+                                className="border-amber-500/50 text-[9px] text-amber-200"
+                                title={row.ocoLastError.message}
+                              >
+                                OCO eșuat
+                              </Badge>
+                            ) : null}
                           </div>
                         </div>
                         <div className="font-mono text-xs text-muted-foreground">
@@ -1261,6 +1277,22 @@ export function LiveTradingPanel() {
                                 fără TP/SL
                               </Badge>
                             )}
+                            {row.oco?.orderListId ? (
+                              <Badge
+                                className="border-emerald-500/60 bg-emerald-500/20 text-[9px] font-semibold text-emerald-200"
+                                title={`OCO activ pe Binance · #${row.oco.orderListId}`}
+                              >
+                                OCO Binance
+                              </Badge>
+                            ) : row.ocoLastError?.message ? (
+                              <Badge
+                                variant="outline"
+                                className="border-amber-500/50 text-[9px] text-amber-200"
+                                title={row.ocoLastError.message}
+                              >
+                                OCO eșuat
+                              </Badge>
+                            ) : null}
                           </div>
                         </div>
                         <div className="font-mono text-xs text-muted-foreground">

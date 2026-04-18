@@ -341,7 +341,27 @@ export function AiPilotTradesColumn({ className, variant = "default" } = {}) {
                     <tbody className="fleet-tbody-live">
                       {activePilot.map((m) => (
                         <tr key={m.pair} className="border-b border-border/50 transition-colors hover:bg-white/[0.03]">
-                          <td className="px-3 py-2 font-medium">{m.pair}</td>
+                          <td className="px-3 py-2 font-medium">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span>{m.pair}</span>
+                              {m.oco?.orderListId ? (
+                                <Badge
+                                  className="border-emerald-500/60 bg-emerald-500/20 text-[9px] font-semibold text-emerald-200"
+                                  title={`OCO activ pe Binance · SL ${Number(m.oco.stopPrice).toFixed(6)} / TP ${Number(m.oco.limitPrice).toFixed(6)} · #${m.oco.orderListId}`}
+                                >
+                                  OCO
+                                </Badge>
+                              ) : m.ocoLastError?.message ? (
+                                <Badge
+                                  variant="outline"
+                                  className="border-amber-500/50 text-[9px] text-amber-200"
+                                  title={m.ocoLastError.message}
+                                >
+                                  OCO eșuat
+                                </Badge>
+                              ) : null}
+                            </div>
+                          </td>
                           <td className="px-2 py-2 text-right font-mono tabular-nums">
                             {Number(m.qty).toLocaleString(undefined, { maximumFractionDigits: 6 })}
                           </td>
