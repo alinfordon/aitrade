@@ -412,9 +412,55 @@ export async function executeManualTrade({
 
       /**
        * Post-buy: dacă userul are deja SL+TP salvate pe perechea asta,
-       * re-sincronizăm OCO-ul pe noua cantitate totală. Eșecul nu blochează
-       * trade-ul (protecția pe vechea qty oricum nu era suficientă).
+       * invalidăm nivelurile „zombie" rămase de la o poziție anterioară
+       * (ex. OCO-reconcile șterge doar `.oco`, nu și `stopLoss`/`takeProfit`).
+       * Un SL „zombie" re-aplicat pe noua qty poate declanșa OCO pe loc,
+       * închizând poziția în câteva secunde. Criteriu conservator:
+       *  - SL invalid: nu e sub intrarea nouă cu cel puțin 0.5% (buffer fee+spread),
+       *    sau e la/peste prețul curent (declanșare garantată).
+       *  - TP invalid: nu e peste intrarea nouă cu cel puțin 0.5%.
+       * Dacă vreun nivel e invalid, curățăm AMBELE (sunt o pereche pentru OCO);
+       * `enrichAiPilotBuyWithStrategy` va rescrie niveluri proaspete + re-sync OCO.
        */
+      try {
+        const fresh = await User.findById(userId);
+        const lpRaw = fresh?.liveProtections;
+        const lp =
+          lpRaw && typeof lpRaw === "object" && !Array.isArray(lpRaw) ? { ...lpRaw } : {};
+        const existing = lp[pair];
+        if (existing && typeof existing === "object") {
+          const slOld = Number(existing.stopLoss);
+          const tpOld = Number(existing.takeProfit);
+          let curPrice = null;
+          try {
+            const px = await getPrice(pair);
+            curPrice = Number.isFinite(px) && px > 0 ? px : null;
+          } catch {
+            curPrice = null;
+          }
+          const slInvalid =
+            Number.isFinite(slOld) &&
+            (slOld >= newAvg * 0.995 ||
+              (curPrice != null && slOld >= curPrice * 0.998));
+          const tpInvalid = Number.isFinite(tpOld) && tpOld <= newAvg * 1.005;
+          if (slInvalid || tpInvalid) {
+            const next = { ...existing };
+            delete next.stopLoss;
+            delete next.takeProfit;
+            delete next.aiPilotStrategy;
+            if (Object.keys(next).length === 0) {
+              delete lp[pair];
+            } else {
+              lp[pair] = next;
+            }
+            fresh.set("liveProtections", lp);
+            await fresh.save();
+          }
+        }
+      } catch {
+        /* fail-open: `enrichAiPilotBuyWithStrategy` rescrie oricum */
+      }
+
       try {
         await syncLiveProtectionOco({ userId, pair, reason: "post_buy" });
       } catch {

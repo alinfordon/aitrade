@@ -15,6 +15,7 @@ import { readPilotOpen } from "@/server/ai/pilot-read-open";
 import { runAutopilotManualLiveSellsDecide } from "@/lib/ai/autopilot-manual-live-decide";
 import { buildAiRuntime } from "@/lib/ai/ai-preferences";
 import { runLivePositionProtectAnalysis } from "@/lib/ai/live-position-analyze";
+import { syncLiveProtectionOco } from "@/server/trading/live-protection-sync";
 import Trade from "@/models/Trade";
 
 function normPair(p) {
@@ -214,8 +215,26 @@ async function enrichAiPilotBuyWithStrategy({
     }
   }
 
+  /**
+   * Re-sincronizăm OCO-ul pe Binance cu NOILE SL/TP proaspăt analizate,
+   * `forceReplace: true` pentru a înlocui orice OCO plasat la `post_buy`
+   * cu parametri vechi („zombie") sau inexistent.
+   */
+  try {
+    await syncLiveProtectionOco({
+      userId,
+      pair,
+      reason: "pilot_post_enrich",
+      forceReplace: true,
+    });
+  } catch {
+    /* fail-open: cron-ul la 1 min rămâne fallback pe TP/SL din DB */
+  }
+
   return { ok: true, analysis };
 }
+
+const MANUAL_LIVE_SL_GRACE_MS = 60_000;
 
 async function runManualLiveProtectionsTick({ userId, liveRows, bots }) {
   let user = await User.findById(userId);
@@ -225,6 +244,37 @@ async function runManualLiveProtectionsTick({ userId, liveRows, bots }) {
       ? user.liveProtections
       : {};
   const applied = [];
+
+  /**
+   * Pentru fiecare pereche cu protecție, aflăm timpul ultimei cumpărări.
+   * Dacă e sub `MANUAL_LIVE_SL_GRACE_MS`, ignorăm SL (nu și TP) — evităm
+   * ieșirea pe zgomot imediat după intrare, înainte ca OCO-ul proaspăt
+   * re-sincronizat din `enrichAiPilotBuyWithStrategy` să apuce să preia.
+   */
+  const pairsWithProt = liveRows
+    .map((r) => normPair(r.pereche))
+    .filter((p) => prot[p] && typeof prot[p] === "object");
+  const lastBuyAtByPair = new Map();
+  if (pairsWithProt.length) {
+    const rows = await Trade.aggregate([
+      {
+        $match: {
+          userId: user._id,
+          side: "buy",
+          status: "filled",
+          isPaper: false,
+          pair: { $in: pairsWithProt },
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: "$pair", lastBuyAt: { $first: "$createdAt" } } },
+    ]);
+    for (const row of rows) {
+      if (row?._id && row.lastBuyAt) {
+        lastBuyAtByPair.set(normPair(row._id), new Date(row.lastBuyAt).getTime());
+      }
+    }
+  }
 
   for (const row of liveRows) {
     const pair = normPair(row.pereche);
@@ -245,9 +295,25 @@ async function runManualLiveProtectionsTick({ userId, liveRows, bots }) {
     }
     if (price == null) continue;
 
-    const hitSl = stopLoss != null && price <= stopLoss;
+    const lastBuyAt = lastBuyAtByPair.get(pair);
+    const inGrace =
+      lastBuyAt != null && Date.now() - lastBuyAt < MANUAL_LIVE_SL_GRACE_MS;
+
+    const hitSl = !inGrace && stopLoss != null && price <= stopLoss;
     const hitTp = takeProfit != null && price >= takeProfit;
-    if (!hitSl && !hitTp) continue;
+    if (!hitSl && !hitTp) {
+      if (inGrace && stopLoss != null && price <= stopLoss) {
+        applied.push({
+          tip: "manual_protect",
+          pair,
+          ok: false,
+          detail: "sl_grace_after_buy",
+          trigger: "sl",
+          price,
+        });
+      }
+      continue;
+    }
 
     user = await User.findById(userId);
     const b = getManualBook(user)[pair];
