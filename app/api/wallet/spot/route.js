@@ -8,36 +8,11 @@ import { respondIfMongoMissing } from "@/lib/mongo-env";
 import Bot from "@/models/Bot";
 import { buildSuggestedPairs, paperBalancesList } from "@/lib/wallet/suggest-pairs";
 import { attachUsdTotalsToBalances, paperUsdcOverview, realUsdcOverview } from "@/lib/wallet/usdc-overview";
+import { formatSpotBalanceRows } from "@/lib/wallet/dust-usdc";
 import { DEFAULT_QUOTE_ASSET, getManualPaperQuoteBalance } from "@/lib/market-defaults";
 import { mapBinanceUserMessageAsync } from "@/lib/binance/map-exchange-error";
 
 export const dynamic = "force-dynamic";
-
-function formatRealBalances(balanceResponse) {
-  const free = balanceResponse.free || {};
-  const used = balanceResponse.used || {};
-  const total = balanceResponse.total || {};
-  const keys = new Set([
-    ...Object.keys(free),
-    ...Object.keys(used),
-    ...Object.keys(total),
-  ]);
-
-  const rows = [];
-  for (const currency of keys) {
-    const f = Number(free[currency] ?? 0);
-    const u = Number(used[currency] ?? 0);
-    const t = Number(total[currency] ?? f + u);
-    if (t > 1e-12 || f > 1e-12 || u > 1e-12) {
-      rows.push({ currency, free: f, used: u, total: t, kind: "spot" });
-    }
-  }
-  return rows.sort((a, b) => {
-    if (a.currency === DEFAULT_QUOTE_ASSET) return -1;
-    if (b.currency === DEFAULT_QUOTE_ASSET) return 1;
-    return b.free - a.free || a.currency.localeCompare(b.currency);
-  });
-}
 
 export async function GET() {
   const missing = respondIfMongoMissing();
@@ -85,7 +60,7 @@ export async function GET() {
       } else {
         try {
           const raw = await getBalance(apiKey, secret, { futures: false });
-          const rows = formatRealBalances(raw);
+          const rows = formatSpotBalanceRows(raw);
           real = {
             connected: true,
             balances: await attachUsdTotalsToBalances(rows),

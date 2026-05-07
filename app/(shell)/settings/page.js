@@ -11,6 +11,7 @@ import { AiModelSettingsCard } from "@/components/AiModelSettingsCard";
 import { BinanceConnectionBadge } from "@/components/BinanceConnectionBadge";
 import { ManualLiveTpslSettingsPanel } from "@/components/ManualLiveTpslSettingsPanel";
 import { RealSpotBalancesTable } from "@/components/RealSpotBalancesTable";
+import { ConvertDustToUsdcCard } from "@/components/ConvertDustToUsdcCard";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
 import { PageHeader } from "@/components/shell/PageHeader";
 
@@ -168,6 +169,9 @@ export default function SettingsPage() {
             <RealSpotBalancesTable wallet={wallet} />
           </CardContent>
         </Card>
+
+        <ConvertDustToUsdcCard className="border-white/[0.08] bg-card/60 backdrop-blur-md xl:col-span-2" />
+
       </section>
 
       <section>

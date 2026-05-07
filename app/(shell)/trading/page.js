@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { TradingChart } from "@/components/TradingChart";
 import { BinanceConnectionBadge } from "@/components/BinanceConnectionBadge";
 import { RealSpotBalancesTable } from "@/components/RealSpotBalancesTable";
+import { ConvertDustToUsdcCard } from "@/components/ConvertDustToUsdcCard";
 import { useSpotWallet } from "@/components/SpotWalletProvider";
 import { toast } from "sonner";
 import { DEFAULT_SPOT_PAIR, DEFAULT_QUOTE_ASSET } from "@/lib/market-defaults";
@@ -275,7 +276,8 @@ function TradingPageInner() {
             Reîmprospătează soldul
           </Button>
         </CardHeader>
-        <CardContent className="grid gap-6 lg:grid-cols-2">
+        <CardContent className="space-y-6">
+          <div className="grid gap-6 lg:grid-cols-2">
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2 text-sm font-medium">
               <span>Live Binance Spot</span>
@@ -331,6 +333,8 @@ function TradingPageInner() {
               </table>
             </div>
           </div>
+          </div>
+          <ConvertDustToUsdcCard />
         </CardContent>
       </Card>
 

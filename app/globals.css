@@ -63,4 +63,26 @@
         inset 0 1px 0 0 hsl(210 40% 98% / 0.06);
     }
   }
+
+  /** Banner „praf → USDC”: bandă de încărcare glisantă */
+  @keyframes dust-slide-bar {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(350%);
+    }
+  }
+
+  .dust-slide-bar {
+    animation: dust-slide-bar 1.15s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dust-slide-bar {
+      animation: none;
+      transform: none;
+      opacity: 0.85;
+    }
+  }
 }
